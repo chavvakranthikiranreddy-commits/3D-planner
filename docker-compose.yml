@@ -1,0 +1,33 @@
+# Full stack: web UI (nginx) + API (FastAPI) + PostgreSQL.
+#   cp backend/.env.example backend/.env   # then edit API_TOKEN
+#   docker compose up --build
+# UI: http://localhost:8080   API docs: http://localhost:8000/docs
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: archiform
+      POSTGRES_PASSWORD: archiform
+      POSTGRES_DB: archiform
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U archiform"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["8000:8000"]
+    volumes: [uploads:/app/uploads]
+
+  web:
+    build: ./frontend
+    ports: ["8080:80"]
+    depends_on: [api]
+
+volumes:
+  dbdata:
+  uploads:

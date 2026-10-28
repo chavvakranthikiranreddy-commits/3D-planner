@@ -1,0 +1,1111 @@
+{
+ "format": "archiform-project",
+ "version": 1,
+ "project": {
+  "id": "scNciJwszN",
+  "name": "Sample 2BHK Apartment",
+  "projectType": "apartment",
+  "units": "m",
+  "currency": "₹",
+  "status": "active",
+  "createdAt": 1793182287343,
+  "updatedAt": 1793182287343,
+  "scene": {
+   "schemaVersion": 1,
+   "floors": [
+    {
+     "id": "f0",
+     "name": "Ground Floor",
+     "level": 0,
+     "elevation": 0,
+     "ceilingHeight": 3
+    }
+   ],
+   "walls": [
+    {
+     "id": "FeYEBHLSq6",
+     "floorId": "f0",
+     "a": {
+      "x": 0,
+      "y": 0
+     },
+     "b": {
+      "x": 11,
+      "y": 0
+     },
+     "thickness": 0.23,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "Sc7b6LrjcI",
+     "floorId": "f0",
+     "a": {
+      "x": 11,
+      "y": 0
+     },
+     "b": {
+      "x": 11,
+      "y": 8
+     },
+     "thickness": 0.23,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "X-cubi-JXm",
+     "floorId": "f0",
+     "a": {
+      "x": 11,
+      "y": 8
+     },
+     "b": {
+      "x": 0,
+      "y": 8
+     },
+     "thickness": 0.23,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "_miOymwlE8",
+     "floorId": "f0",
+     "a": {
+      "x": 0,
+      "y": 8
+     },
+     "b": {
+      "x": 0,
+      "y": 0
+     },
+     "thickness": 0.23,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "-SH4O7ljq3",
+     "floorId": "f0",
+     "a": {
+      "x": 6.5,
+      "y": 0
+     },
+     "b": {
+      "x": 6.5,
+      "y": 8
+     },
+     "thickness": 0.12,
+     "height": 3,
+     "materialId": "paint-greige",
+     "source": "template"
+    },
+    {
+     "id": "UE39QQop20",
+     "floorId": "f0",
+     "a": {
+      "x": 0,
+      "y": 5.4
+     },
+     "b": {
+      "x": 6.5,
+      "y": 5.4
+     },
+     "thickness": 0.12,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "YAu2mXBK0D",
+     "floorId": "f0",
+     "a": {
+      "x": 3.5,
+      "y": 5.4
+     },
+     "b": {
+      "x": 3.5,
+      "y": 8
+     },
+     "thickness": 0.12,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    },
+    {
+     "id": "GHNHToDmNi",
+     "floorId": "f0",
+     "a": {
+      "x": 6.5,
+      "y": 4
+     },
+     "b": {
+      "x": 11,
+      "y": 4
+     },
+     "thickness": 0.12,
+     "height": 3,
+     "materialId": "paint-white",
+     "source": "template"
+    }
+   ],
+   "openings": [
+    {
+     "id": "QjlDdK-vkL",
+     "wallId": "_miOymwlE8",
+     "type": "door",
+     "offset": 5,
+     "width": 1.05,
+     "height": 2.15,
+     "sill": 0,
+     "source": "template"
+    },
+    {
+     "id": "Jr6aaz1IAc",
+     "wallId": "FeYEBHLSq6",
+     "type": "window",
+     "offset": 3,
+     "width": 2.2,
+     "height": 1.5,
+     "sill": 0.75,
+     "source": "template"
+    },
+    {
+     "id": "CZ7x5_VGvr",
+     "wallId": "FeYEBHLSq6",
+     "type": "window",
+     "offset": 8.75,
+     "width": 1.6,
+     "height": 1.4,
+     "sill": 0.8,
+     "source": "template"
+    },
+    {
+     "id": "L0EaPXdhsV",
+     "wallId": "Sc7b6LrjcI",
+     "type": "window",
+     "offset": 6.1,
+     "width": 1.4,
+     "height": 1.4,
+     "sill": 0.8,
+     "source": "template"
+    },
+    {
+     "id": "j-iQIwovye",
+     "wallId": "X-cubi-JXm",
+     "type": "window",
+     "offset": 9.25,
+     "width": 1.2,
+     "height": 1.1,
+     "sill": 1.05,
+     "source": "template"
+    },
+    {
+     "id": "PCvXK-MSgl",
+     "wallId": "X-cubi-JXm",
+     "type": "window",
+     "offset": 6,
+     "width": 0.6,
+     "height": 0.5,
+     "sill": 1.7,
+     "source": "template"
+    },
+    {
+     "id": "I4DcE8vl3r",
+     "wallId": "-SH4O7ljq3",
+     "type": "door",
+     "offset": 3.1,
+     "width": 0.9,
+     "height": 2.1,
+     "sill": 0,
+     "source": "template"
+    },
+    {
+     "id": "em816hLa-C",
+     "wallId": "-SH4O7ljq3",
+     "type": "door",
+     "offset": 4.85,
+     "width": 0.9,
+     "height": 2.1,
+     "sill": 0,
+     "source": "template"
+    },
+    {
+     "id": "6ZWq95AKzi",
+     "wallId": "UE39QQop20",
+     "type": "door",
+     "offset": 1.75,
+     "width": 1.2,
+     "height": 2.1,
+     "sill": 0,
+     "source": "template"
+    },
+    {
+     "id": "MxQlNphUBA",
+     "wallId": "UE39QQop20",
+     "type": "door",
+     "offset": 5,
+     "width": 0.8,
+     "height": 2.1,
+     "sill": 0,
+     "source": "template"
+    }
+   ],
+   "rooms": [
+    {
+     "id": "X0yCUqH0sE",
+     "floorId": "f0",
+     "name": "Living & Dining",
+     "roomType": "living",
+     "polygon": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "x": 6.5,
+       "y": 0
+      },
+      {
+       "x": 6.5,
+       "y": 5.4
+      },
+      {
+       "x": 0,
+       "y": 5.4
+      }
+     ],
+     "floorMaterialId": "wood-oak",
+     "ceilingMaterialId": "ceiling-white",
+     "source": "template"
+    },
+    {
+     "id": "vz5BMCGyWw",
+     "floorId": "f0",
+     "name": "Kitchen",
+     "roomType": "kitchen",
+     "polygon": [
+      {
+       "x": 0,
+       "y": 5.4
+      },
+      {
+       "x": 3.5,
+       "y": 5.4
+      },
+      {
+       "x": 3.5,
+       "y": 8
+      },
+      {
+       "x": 0,
+       "y": 8
+      }
+     ],
+     "floorMaterialId": "tile-slate",
+     "ceilingMaterialId": "ceiling-white",
+     "source": "template"
+    },
+    {
+     "id": "Er2Uqx0GgI",
+     "floorId": "f0",
+     "name": "Bathroom",
+     "roomType": "bathroom",
+     "polygon": [
+      {
+       "x": 3.5,
+       "y": 5.4
+      },
+      {
+       "x": 6.5,
+       "y": 5.4
+      },
+      {
+       "x": 6.5,
+       "y": 8
+      },
+      {
+       "x": 3.5,
+       "y": 8
+      }
+     ],
+     "floorMaterialId": "tile-vitrified",
+     "ceilingMaterialId": "ceiling-white",
+     "source": "template"
+    },
+    {
+     "id": "QVvzwClOio",
+     "floorId": "f0",
+     "name": "Master Bedroom",
+     "roomType": "bedroom",
+     "polygon": [
+      {
+       "x": 6.5,
+       "y": 0
+      },
+      {
+       "x": 11,
+       "y": 0
+      },
+      {
+       "x": 11,
+       "y": 4
+      },
+      {
+       "x": 6.5,
+       "y": 4
+      }
+     ],
+     "floorMaterialId": "wood-herringbone",
+     "ceilingMaterialId": "ceiling-white",
+     "source": "template"
+    },
+    {
+     "id": "GQaBebfmpd",
+     "floorId": "f0",
+     "name": "Bedroom 2",
+     "roomType": "bedroom",
+     "polygon": [
+      {
+       "x": 6.5,
+       "y": 4
+      },
+      {
+       "x": 11,
+       "y": 4
+      },
+      {
+       "x": 11,
+       "y": 8
+      },
+      {
+       "x": 6.5,
+       "y": 8
+      }
+     ],
+     "floorMaterialId": "wood-oak",
+     "ceilingMaterialId": "ceiling-white",
+     "source": "template"
+    }
+   ],
+   "objects": [
+    {
+     "id": "3dixhraRZu",
+     "floorId": "f0",
+     "assetId": "sofa-3",
+     "name": "3-Seater Sofa",
+     "x": 2.2,
+     "y": 3.9,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 2.1,
+      "h": 0.85,
+      "d": 0.9
+     },
+     "colorHex": "#8a8f94",
+     "price": 42000,
+     "source": "template"
+    },
+    {
+     "id": "n-Q0dsP3Kz",
+     "floorId": "f0",
+     "assetId": "coffee-table",
+     "name": "Coffee Table",
+     "x": 2.2,
+     "y": 2.85,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 1.1,
+      "h": 0.42,
+      "d": 0.6
+     },
+     "colorHex": "#7b5a3c",
+     "price": 9500,
+     "source": "template"
+    },
+    {
+     "id": "1Pgw3tjG-B",
+     "floorId": "f0",
+     "assetId": "rug",
+     "name": "Area Rug 2×3 m",
+     "x": 2.2,
+     "y": 2.9,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 3,
+      "h": 0.015,
+      "d": 2
+     },
+     "colorHex": "#cdbfa8",
+     "accentHex": "#8a6f55",
+     "price": 14000,
+     "source": "template"
+    },
+    {
+     "id": "_YugokllZy",
+     "floorId": "f0",
+     "assetId": "tv-unit",
+     "name": "TV Unit",
+     "x": 2.2,
+     "y": 0.35,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 1.8,
+      "h": 0.5,
+      "d": 0.42
+     },
+     "colorHex": "#3a3330",
+     "price": 22000,
+     "source": "template"
+    },
+    {
+     "id": "wheMgaeTpy",
+     "floorId": "f0",
+     "assetId": "armchair",
+     "name": "Lounge Armchair",
+     "x": 0.75,
+     "y": 2.5,
+     "elevation": 0,
+     "rotation": 1.5707963267948966,
+     "dims": {
+      "w": 0.85,
+      "h": 0.85,
+      "d": 0.85
+     },
+     "colorHex": "#c08a5b",
+     "price": 16500,
+     "source": "template"
+    },
+    {
+     "id": "pBdz2lZciS",
+     "floorId": "f0",
+     "assetId": "plant",
+     "name": "Potted Plant",
+     "x": 0.5,
+     "y": 0.5,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.5,
+      "h": 1.3,
+      "d": 0.5
+     },
+     "colorHex": "#4f7a4a",
+     "accentHex": "#c9b8a0",
+     "price": 2500,
+     "source": "template"
+    },
+    {
+     "id": "iZLNef-t-A",
+     "floorId": "f0",
+     "assetId": "floor-lamp",
+     "name": "Floor Lamp",
+     "x": 3.7,
+     "y": 4.6,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.4,
+      "h": 1.65,
+      "d": 0.4
+     },
+     "colorHex": "#f1e8d6",
+     "accentHex": "#202022",
+     "price": 6800,
+     "source": "template"
+    },
+    {
+     "id": "uu_Io5vISX",
+     "floorId": "f0",
+     "assetId": "dining-4",
+     "name": "Dining Table (4)",
+     "x": 5.1,
+     "y": 2.6,
+     "elevation": 0,
+     "rotation": 1.5707963267948966,
+     "dims": {
+      "w": 1.2,
+      "h": 0.75,
+      "d": 0.8
+     },
+     "colorHex": "#c7a57d",
+     "price": 19000,
+     "source": "template"
+    },
+    {
+     "id": "yHwqXpgDqq",
+     "floorId": "f0",
+     "assetId": "dining-chair",
+     "name": "Dining Chair",
+     "x": 4.55,
+     "y": 2.25,
+     "elevation": 0,
+     "rotation": 1.5707963267948966,
+     "dims": {
+      "w": 0.46,
+      "h": 0.88,
+      "d": 0.52
+     },
+     "colorHex": "#a27a52",
+     "price": 4500,
+     "source": "template"
+    },
+    {
+     "id": "7yxpHDEDXS",
+     "floorId": "f0",
+     "assetId": "dining-chair",
+     "name": "Dining Chair",
+     "x": 4.55,
+     "y": 2.95,
+     "elevation": 0,
+     "rotation": 1.5707963267948966,
+     "dims": {
+      "w": 0.46,
+      "h": 0.88,
+      "d": 0.52
+     },
+     "colorHex": "#a27a52",
+     "price": 4500,
+     "source": "template"
+    },
+    {
+     "id": "s6_21otWZq",
+     "floorId": "f0",
+     "assetId": "dining-chair",
+     "name": "Dining Chair",
+     "x": 5.65,
+     "y": 2.25,
+     "elevation": 0,
+     "rotation": -1.5707963267948966,
+     "dims": {
+      "w": 0.46,
+      "h": 0.88,
+      "d": 0.52
+     },
+     "colorHex": "#a27a52",
+     "price": 4500,
+     "source": "template"
+    },
+    {
+     "id": "JqtVv1uP_Y",
+     "floorId": "f0",
+     "assetId": "dining-chair",
+     "name": "Dining Chair",
+     "x": 5.65,
+     "y": 2.95,
+     "elevation": 0,
+     "rotation": -1.5707963267948966,
+     "dims": {
+      "w": 0.46,
+      "h": 0.88,
+      "d": 0.52
+     },
+     "colorHex": "#a27a52",
+     "price": 4500,
+     "source": "template"
+    },
+    {
+     "id": "gTEwvq_U3A",
+     "floorId": "f0",
+     "assetId": "pendant",
+     "name": "Pendant Light",
+     "x": 5.1,
+     "y": 2.6,
+     "elevation": 1.95,
+     "rotation": 0,
+     "dims": {
+      "w": 0.45,
+      "h": 0.6,
+      "d": 0.45
+     },
+     "colorHex": "#b38b4d",
+     "price": 7500,
+     "source": "template"
+    },
+    {
+     "id": "pphkN_1sXr",
+     "floorId": "f0",
+     "assetId": "kitchen-base",
+     "name": "Kitchen Base Run (2.4 m)",
+     "x": 1.75,
+     "y": 7.6,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 2.4,
+      "h": 0.9,
+      "d": 0.6
+     },
+     "colorHex": "#e8e4dc",
+     "accentHex": "#2f2f30",
+     "price": 85000,
+     "source": "template"
+    },
+    {
+     "id": "GloXRhmgVv",
+     "floorId": "f0",
+     "assetId": "kitchen-wall",
+     "name": "Wall Cabinets (2.4 m)",
+     "x": 1.75,
+     "y": 7.72,
+     "elevation": 1.5,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 2.4,
+      "h": 0.7,
+      "d": 0.35
+     },
+     "colorHex": "#e8e4dc",
+     "price": 45000,
+     "source": "template"
+    },
+    {
+     "id": "AY-Drzu-tA",
+     "floorId": "f0",
+     "assetId": "fridge",
+     "name": "Refrigerator",
+     "x": 3,
+     "y": 6,
+     "elevation": 0,
+     "rotation": -1.5707963267948966,
+     "dims": {
+      "w": 0.7,
+      "h": 1.8,
+      "d": 0.7
+     },
+     "colorHex": "#c9ccd0",
+     "price": 38000,
+     "source": "template"
+    },
+    {
+     "id": "RH0AZWA4kg",
+     "floorId": "f0",
+     "assetId": "vanity",
+     "name": "Vanity with Basin",
+     "x": 5.6,
+     "y": 7.62,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 0.9,
+      "h": 0.85,
+      "d": 0.5
+     },
+     "colorHex": "#d8d2c6",
+     "accentHex": "#ffffff",
+     "price": 24000,
+     "source": "template"
+    },
+    {
+     "id": "V9EjdZL-Bk",
+     "floorId": "f0",
+     "assetId": "wc",
+     "name": "Wall-hung WC",
+     "x": 4.1,
+     "y": 7.6,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 0.38,
+      "h": 0.8,
+      "d": 0.55
+     },
+     "colorHex": "#ffffff",
+     "price": 16000,
+     "source": "template"
+    },
+    {
+     "id": "fYIf8oJGmz",
+     "floorId": "f0",
+     "assetId": "shower",
+     "name": "Shower Enclosure",
+     "x": 4.1,
+     "y": 6,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.9,
+      "h": 2,
+      "d": 0.9
+     },
+     "colorHex": "#dfe7ea",
+     "price": 30000,
+     "source": "template"
+    },
+    {
+     "id": "PVEHwXM4cG",
+     "floorId": "f0",
+     "assetId": "bed-king",
+     "name": "King Bed",
+     "x": 8.9,
+     "y": 1.25,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 1.95,
+      "h": 1,
+      "d": 2.15
+     },
+     "colorHex": "#8d7b68",
+     "accentHex": "#f1ede6",
+     "price": 56000,
+     "source": "template"
+    },
+    {
+     "id": "cBpeC2F27r",
+     "floorId": "f0",
+     "assetId": "nightstand",
+     "name": "Bedside Table",
+     "x": 7.6,
+     "y": 0.4,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.5,
+      "h": 0.5,
+      "d": 0.42
+     },
+     "colorHex": "#a6845e",
+     "price": 5200,
+     "source": "template"
+    },
+    {
+     "id": "PmizhsjLIy",
+     "floorId": "f0",
+     "assetId": "nightstand",
+     "name": "Bedside Table",
+     "x": 10.2,
+     "y": 0.4,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.5,
+      "h": 0.5,
+      "d": 0.42
+     },
+     "colorHex": "#a6845e",
+     "price": 5200,
+     "source": "template"
+    },
+    {
+     "id": "_Rv0dMebV9",
+     "floorId": "f0",
+     "assetId": "wardrobe",
+     "name": "Wardrobe 3-Door",
+     "x": 8.9,
+     "y": 3.6,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 1.8,
+      "h": 2.2,
+      "d": 0.6
+     },
+     "colorHex": "#e9e4da",
+     "accentHex": "#b38b4d",
+     "price": 48000,
+     "source": "template"
+    },
+    {
+     "id": "eJMsuHSSyU",
+     "floorId": "f0",
+     "assetId": "art",
+     "name": "Wall Art Frame",
+     "x": 8.9,
+     "y": 0.13,
+     "elevation": 1.3,
+     "rotation": 0,
+     "dims": {
+      "w": 1,
+      "h": 0.7,
+      "d": 0.04
+     },
+     "colorHex": "#c46a4a",
+     "accentHex": "#1f1f1f",
+     "price": 4500,
+     "source": "template"
+    },
+    {
+     "id": "SsJQUNZvRg",
+     "floorId": "f0",
+     "assetId": "bed-queen",
+     "name": "Queen Bed",
+     "x": 9.6,
+     "y": 6.2,
+     "elevation": 0,
+     "rotation": -1.5707963267948966,
+     "dims": {
+      "w": 1.65,
+      "h": 1,
+      "d": 2.1
+     },
+     "colorHex": "#c2a07a",
+     "accentHex": "#f4f1ea",
+     "price": 42000,
+     "source": "template"
+    },
+    {
+     "id": "TLSAjSMsDQ",
+     "floorId": "f0",
+     "assetId": "desk",
+     "name": "Work Desk",
+     "x": 7.3,
+     "y": 7.5,
+     "elevation": 0,
+     "rotation": 3.141592653589793,
+     "dims": {
+      "w": 1.4,
+      "h": 0.75,
+      "d": 0.7
+     },
+     "colorHex": "#c7a57d",
+     "accentHex": "#2a2a2a",
+     "price": 15000,
+     "source": "template"
+    },
+    {
+     "id": "PPZmHKaZuf",
+     "floorId": "f0",
+     "assetId": "office-chair",
+     "name": "Task Chair",
+     "x": 7.3,
+     "y": 6.95,
+     "elevation": 0,
+     "rotation": 0,
+     "dims": {
+      "w": 0.6,
+      "h": 1.05,
+      "d": 0.6
+     },
+     "colorHex": "#2c2c2e",
+     "price": 11000,
+     "source": "template"
+    },
+    {
+     "id": "uyD679NI8U",
+     "floorId": "f0",
+     "assetId": "bookshelf",
+     "name": "Open Bookshelf",
+     "x": 10.68,
+     "y": 4.75,
+     "elevation": 0,
+     "rotation": -1.5707963267948966,
+     "dims": {
+      "w": 1,
+      "h": 1.9,
+      "d": 0.35
+     },
+     "colorHex": "#6b4a33",
+     "price": 14000,
+     "source": "template"
+    }
+   ],
+   "materials": {
+    "paint-white": {
+     "id": "paint-white",
+     "name": "Matte White Paint",
+     "kind": "paint",
+     "colorHex": "#f4f1ea",
+     "roughness": 0.92,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 35
+    },
+    "paint-greige": {
+     "id": "paint-greige",
+     "name": "Warm Greige",
+     "kind": "paint",
+     "colorHex": "#d8cfc2",
+     "roughness": 0.9,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 38
+    },
+    "paint-sage": {
+     "id": "paint-sage",
+     "name": "Sage Green",
+     "kind": "paint",
+     "colorHex": "#a8b5a0",
+     "roughness": 0.9,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 40
+    },
+    "paint-terracotta": {
+     "id": "paint-terracotta",
+     "name": "Terracotta",
+     "kind": "paint",
+     "colorHex": "#c46a4a",
+     "roughness": 0.9,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 42
+    },
+    "paint-navy": {
+     "id": "paint-navy",
+     "name": "Deep Navy",
+     "kind": "paint",
+     "colorHex": "#2c3a52",
+     "roughness": 0.88,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 42
+    },
+    "paint-charcoal": {
+     "id": "paint-charcoal",
+     "name": "Charcoal",
+     "kind": "paint",
+     "colorHex": "#3d3d3f",
+     "roughness": 0.9,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 40
+    },
+    "wood-oak": {
+     "id": "wood-oak",
+     "name": "Natural Oak",
+     "kind": "wood",
+     "colorHex": "#c29a6b",
+     "roughness": 0.7,
+     "metalness": 0,
+     "pattern": "wood",
+     "textureScale": 1.2,
+     "pricePerM2": 2800
+    },
+    "wood-walnut": {
+     "id": "wood-walnut",
+     "name": "Walnut",
+     "kind": "wood",
+     "colorHex": "#6b4a33",
+     "roughness": 0.65,
+     "metalness": 0,
+     "pattern": "wood",
+     "textureScale": 1.2,
+     "pricePerM2": 3600
+    },
+    "wood-herringbone": {
+     "id": "wood-herringbone",
+     "name": "Oak Herringbone",
+     "kind": "wood",
+     "colorHex": "#b98d5f",
+     "roughness": 0.68,
+     "metalness": 0,
+     "pattern": "herringbone",
+     "textureScale": 1,
+     "pricePerM2": 4200
+    },
+    "stone-marble": {
+     "id": "stone-marble",
+     "name": "White Marble",
+     "kind": "stone",
+     "colorHex": "#ecebe8",
+     "roughness": 0.25,
+     "metalness": 0,
+     "pattern": "marble",
+     "textureScale": 2,
+     "pricePerM2": 3200
+    },
+    "stone-terrazzo": {
+     "id": "stone-terrazzo",
+     "name": "Terrazzo",
+     "kind": "stone",
+     "colorHex": "#e4ddd2",
+     "roughness": 0.35,
+     "metalness": 0,
+     "pattern": "terrazzo",
+     "textureScale": 1,
+     "pricePerM2": 1900
+    },
+    "tile-vitrified": {
+     "id": "tile-vitrified",
+     "name": "Vitrified Tile 60×60",
+     "kind": "tile",
+     "colorHex": "#d9d6d0",
+     "roughness": 0.3,
+     "metalness": 0,
+     "pattern": "tile",
+     "textureScale": 1.2,
+     "pricePerM2": 900
+    },
+    "tile-slate": {
+     "id": "tile-slate",
+     "name": "Slate Tile",
+     "kind": "tile",
+     "colorHex": "#5d6166",
+     "roughness": 0.6,
+     "metalness": 0,
+     "pattern": "tile",
+     "textureScale": 1.2,
+     "pricePerM2": 1400
+    },
+    "concrete": {
+     "id": "concrete",
+     "name": "Polished Concrete",
+     "kind": "concrete",
+     "colorHex": "#a7a59f",
+     "roughness": 0.55,
+     "metalness": 0,
+     "pattern": "concrete",
+     "textureScale": 3,
+     "pricePerM2": 1100
+    },
+    "fabric-linen": {
+     "id": "fabric-linen",
+     "name": "Linen",
+     "kind": "fabric",
+     "colorHex": "#d6cbb8",
+     "roughness": 1,
+     "metalness": 0,
+     "pattern": "fabric",
+     "textureScale": 0.4,
+     "pricePerM2": 600
+    },
+    "metal-brass": {
+     "id": "metal-brass",
+     "name": "Brushed Brass",
+     "kind": "metal",
+     "colorHex": "#b38b4d",
+     "roughness": 0.35,
+     "metalness": 0.85,
+     "pattern": "none",
+     "pricePerM2": 5000
+    },
+    "metal-black": {
+     "id": "metal-black",
+     "name": "Matte Black Metal",
+     "kind": "metal",
+     "colorHex": "#202022",
+     "roughness": 0.5,
+     "metalness": 0.7,
+     "pattern": "none",
+     "pricePerM2": 3000
+    },
+    "ceiling-white": {
+     "id": "ceiling-white",
+     "name": "Ceiling White",
+     "kind": "paint",
+     "colorHex": "#fbfaf7",
+     "roughness": 0.95,
+     "metalness": 0,
+     "pattern": "none",
+     "pricePerM2": 30
+    }
+   },
+   "lighting": {
+    "sunIntensity": 2.2,
+    "sunAzimuth": 135,
+    "sunElevation": 50,
+    "ambient": 0.55,
+    "warmth": 0.45,
+    "roomLights": true
+   }
+  },
+  "versions": []
+ }
+}
