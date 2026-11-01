@@ -328,11 +328,11 @@ function ImageProxy({ o }: { o: SceneObject }) {
           <meshStandardMaterial map={tex} transparent alphaTest={0.05} roughness={0.8} />
         </mesh>
       )}
-      {/* dashed outline marks the object as an estimate */}
-      <lineSegments position={[0, h / 2, 0]}>
+      {/* amber outline marks the object as an estimate */}
+      {o.estimated && <lineSegments position={[0, h / 2, 0]}>
         <edgesGeometry args={[new THREE.BoxGeometry(w + 0.01, h + 0.01, d + 0.01)]} />
         <lineBasicMaterial color="#f59e0b" />
-      </lineSegments>
+      </lineSegments>}
     </group>
   );
 }

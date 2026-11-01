@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   ArrowLeft, Undo2, Redo2, MousePointer2, PenLine, Square, DoorOpen, AppWindow, Hand, Ruler, Magnet, Check, Loader2, AlertCircle,
-  SlidersHorizontal, Palette, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
+  SlidersHorizontal, Palette, MessageSquare, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
 } from 'lucide-react';
 import { useEditor, type RightTab, type Tool, type View } from '../store/editor';
 import Plan2D from '../components/Plan2D';
@@ -14,6 +14,7 @@ import AIPanel from '../components/panels/AIPanel';
 import LightingPanel from '../components/panels/LightingPanel';
 import VersionsPanel from '../components/panels/VersionsPanel';
 import ExportPanel from '../components/panels/ExportPanel';
+import ChatPanel from '../components/panels/ChatPanel';
 import { Btn, Modal } from '../components/ui';
 import { uid } from '../lib/templates';
 import { thumbnail } from '../lib/capture';
@@ -32,6 +33,7 @@ const VIEWS: { id: View; icon: typeof Grid2x2; label: string }[] = [
   { id: '2d', icon: Grid2x2, label: '2D plan' }, { id: 'split', icon: Columns2, label: 'Split' }, { id: '3d', icon: Box, label: '3D' }, { id: 'walk', icon: Footprints, label: 'Walk' },
 ];
 const TABS: { id: RightTab; icon: typeof Palette; label: string }[] = [
+  { id: 'chat', icon: MessageSquare, label: 'Design chat' },
   { id: 'properties', icon: SlidersHorizontal, label: 'Properties' }, { id: 'materials', icon: Palette, label: 'Materials & colour' },
   { id: 'catalog', icon: Sofa, label: 'Catalog' }, { id: 'product', icon: ImagePlus, label: 'Product image' },
   { id: 'ai', icon: Sparkles, label: 'AI assistant' }, { id: 'lighting', icon: Sun, label: 'Lighting' },
@@ -142,7 +144,7 @@ export default function Editor() {
   const hasBp = !!project.blueprint;
 
   const panel = {
-    properties: <PropertiesPanel />, materials: <MaterialsPanel />, catalog: <CatalogPanel />, product: <ProductPanel />,
+    chat: <ChatPanel />, properties: <PropertiesPanel />, materials: <MaterialsPanel />, catalog: <CatalogPanel />, product: <ProductPanel />,
     ai: <AIPanel />, lighting: <LightingPanel />, versions: <VersionsPanel />, export: <ExportPanel />,
   }[rightTab];
 

@@ -12,6 +12,7 @@ The 3D model is built from structured geometry: walls, openings, rooms and floor
 
 | Area | What you get |
 |---|---|
+| **Design chat** | Type plain commands and they are applied straight to the plan and 3D view. For example: *"use #C46A4A for the hall"*, *"marble floor in the kitchen"*, *"add an L-shaped sofa to the hall in #8A9099 with gold accent"*. You can attach, paste or drop an image and say *"place this image in the first bedroom"* or *"put this image on the hall wall as art"*. Rooms can be named the way you'd say them ("hall", "first bedroom", "room 3"), and *"room 2 is a bedroom"* sets a room's type. Every change is a single undo step. Runs offline. |
 | **Projects (FR-01)** | Dashboard to create, rename, duplicate, archive, delete and search projects. Every edit autosaves, and named versions can be restored. Projects can be imported and exported as files. |
 | **Blueprint import (FR-02 to FR-05)** | Upload a PDF, PNG or JPG. File type is checked from the file's content and there is a 25 MB limit. You can pick the PDF page and fix the orientation. **Scale calibration is required**: you click two points and enter the real length. Detection then finds walls, doors, windows and rooms, each with a confidence score. You review the results, exclude wrong ones and generate the 3D model. |
 | **2D ↔ 3D sync (FR-06)** | The 2D plan and the 3D view edit the same scene model. Split view shows both at once. |

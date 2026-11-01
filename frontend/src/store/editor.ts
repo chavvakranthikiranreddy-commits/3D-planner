@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import type { Job, Project, Scene, Selection } from '../lib/types';
 import { saveProject, loadProject, type Settings, DEFAULT_SETTINGS, saveSettings } from '../lib/db';
 import { uid } from '../lib/templates';
+import type { ChatMsg } from '../components/panels/ChatPanel';
 
 export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'pan' | 'calibrate';
 export type View = '2d' | '3d' | 'split' | 'walk';
-export type RightTab = 'properties' | 'materials' | 'catalog' | 'product' | 'ai' | 'lighting' | 'versions' | 'export';
+export type RightTab = 'chat' | 'properties' | 'materials' | 'catalog' | 'product' | 'ai' | 'lighting' | 'versions' | 'export';
 export type SaveState = 'saved' | 'saving' | 'unsaved' | 'error';
 export type Route = { page: 'dashboard' } | { page: 'editor'; id: string } | { page: 'settings' } | { page: 'import'; id: string };
 
@@ -23,6 +24,7 @@ interface State {
   gridSnap: boolean;
   camPreset: { name: 'perspective' | 'dollhouse' | 'top' | 'front'; n: number };
   rightTab: RightTab;
+  chat: ChatMsg[];
   past: Scene[];
   future: Scene[];
   saveState: SaveState;
@@ -73,7 +75,8 @@ export const useEditor = create<State>((set, get) => {
     showBlueprint: true,
     gridSnap: true,
     camPreset: { name: 'dollhouse', n: 0 },
-    rightTab: 'properties',
+    rightTab: 'chat',
+    chat: [],
     past: [],
     future: [],
     saveState: 'saved',
@@ -97,10 +100,10 @@ export const useEditor = create<State>((set, get) => {
       if (cur?.id === id) return true;
       const p = await loadProject(id);
       if (!p) return false;
-      set({ project: p, past: [], future: [], selection: null, activeFloorId: p.scene.floors[0]?.id ?? 'f0', saveState: 'saved', tool: 'select' });
+      set({ project: p, past: [], future: [], selection: null, activeFloorId: p.scene.floors[0]?.id ?? 'f0', saveState: 'saved', tool: 'select', chat: [] });
       return true;
     },
-    setProject: (p) => set({ project: p, past: [], future: [], selection: null, activeFloorId: p?.scene.floors[0]?.id ?? 'f0' }),
+    setProject: (p) => set({ project: p, past: [], future: [], selection: null, chat: [], activeFloorId: p?.scene.floors[0]?.id ?? 'f0' }),
     updateProject: (fn) => {
       const p = get().project;
       if (!p) return;
@@ -138,7 +141,7 @@ export const useEditor = create<State>((set, get) => {
     },
     select: (selection) => {
       set({ selection });
-      if (selection && get().rightTab !== 'materials') set({ rightTab: 'properties' });
+      if (selection && !['materials', 'chat'].includes(get().rightTab)) set({ rightTab: 'properties' });
     },
     setTool: (tool) => set({ tool, selection: tool === 'select' ? get().selection : null }),
     setView: (view) => set({ view }),
