@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Search, Copy, Pencil, Archive, Trash2, FileUp, Home, Settings as Cog, Upload, ArchiveRestore, Building2, Lock, AlertTriangle, Download } from 'lucide-react';
+import { Camera, Plus, Search, Copy, Pencil, Archive, Trash2, FileUp, Home, Settings as Cog, Upload, ArchiveRestore, Building2, Lock, AlertTriangle, Download } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { deleteProject, listProjects, loadProject, loadRaw, saveProject, type ProjectMeta } from '../lib/db';
 import { downloadText } from '../lib/capture';
@@ -8,16 +8,16 @@ import { parseProjectFile } from '../lib/migrate';
 import { Btn, Confirm, Field, Modal, TextInput, inputCls } from '../components/ui';
 import type { Project } from '../lib/types';
 
-function NewProjectModal({ onClose, onCreate, mode }: { onClose: () => void; onCreate: (p: Project, thenImport: boolean) => void; mode: 'blank' | 'import' }) {
+function NewProjectModal({ onClose, onCreate, mode }: { onClose: () => void; onCreate: (p: Project, then: 'import' | 'photos' | 'editor') => void; mode: 'blank' | 'import' | 'photos' }) {
   const settings = useEditor((s) => s.settings);
-  const [name, setName] = useState(mode === 'import' ? 'My home from blueprint' : 'New design');
+  const [name, setName] = useState(mode === 'import' ? 'My home from blueprint' : mode === 'photos' ? 'My home interiors' : 'New design');
   const [type, setType] = useState<Project['projectType']>('apartment');
   const [units, setUnits] = useState(settings.units);
   const [floors, setFloors] = useState(1);
   const [ceiling, setCeiling] = useState(settings.wallHeight);
   return (
-    <Modal title={mode === 'import' ? 'New project from blueprint' : 'New project'} onClose={onClose}>
-      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onCreate(newProject(name.trim() || 'Untitled', { projectType: type, units, floors, ceilingHeight: ceiling, currency: settings.currency }), mode === 'import'); }}>
+    <Modal title={mode === 'import' ? 'New project from blueprint' : mode === 'photos' ? 'New project from room photos' : 'New project'} onClose={onClose}>
+      <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onCreate(newProject(name.trim() || 'Untitled', { projectType: type, units, floors, ceilingHeight: ceiling, currency: settings.currency }), mode === 'blank' ? 'editor' : mode); }}>
         <Field label="Project name"><TextInput autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Project type">
@@ -36,7 +36,7 @@ function NewProjectModal({ onClose, onCreate, mode }: { onClose: () => void; onC
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Btn variant="outline" onClick={onClose}>Cancel</Btn>
-          <Btn variant="primary" type="submit">{mode === 'import' ? 'Continue to upload' : 'Create'}</Btn>
+          <Btn variant="primary" type="submit">{mode === 'blank' ? 'Create' : 'Continue to upload'}</Btn>
         </div>
       </form>
     </Modal>
@@ -48,7 +48,7 @@ export default function Dashboard() {
   const [items, setItems] = useState<ProjectMeta[] | null>(null);
   const [q, setQ] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const [modal, setModal] = useState<null | 'blank' | 'import'>(null);
+  const [modal, setModal] = useState<null | 'blank' | 'import' | 'photos'>(null);
   const [renaming, setRenaming] = useState<ProjectMeta | null>(null);
   const [deleting, setDeleting] = useState<ProjectMeta | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -65,10 +65,10 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const create = async (p: Project, thenImport = false) => {
+  const create = async (p: Project, then: 'import' | 'photos' | 'editor' = 'editor') => {
     await saveProject(p);
     setProject(p);
-    navigate(thenImport ? { page: 'import', id: p.id } : { page: 'editor', id: p.id });
+    navigate({ page: then, id: p.id });
   };
   const mutateStored = async (id: string, fn: (p: Project) => void) => {
     const p = await loadProject(id);
@@ -117,7 +117,12 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-6xl px-5 py-8">
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button onClick={() => setModal('photos')} className="group rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/15 to-transparent p-5 text-left hover:border-emerald-400">
+            <Camera className="mb-3 text-emerald-400" />
+            <div className="font-semibold text-stone-50">Start from room photos</div>
+            <p className="mt-1 text-sm text-stone-400">Building ready for interiors? Upload raw room photos, try colours, tiles and panelling on them, then turn them into measured 3D rooms.</p>
+          </button>
           <button onClick={() => setModal('import')} className="group rounded-xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 to-transparent p-5 text-left hover:border-amber-400">
             <FileUp className="mb-3 text-amber-400" />
             <div className="font-semibold text-stone-50">Start from a blueprint</div>
@@ -191,7 +196,7 @@ export default function Dashboard() {
         <p className="mt-10 text-center text-xs text-stone-600">Projects are stored privately in this browser (IndexedDB). Export a project file to back it up or move it to another device.</p>
       </main>
 
-      {modal && <NewProjectModal mode={modal} onClose={() => setModal(null)} onCreate={(p, imp) => void create(p, imp)} />}
+      {modal && <NewProjectModal mode={modal} onClose={() => setModal(null)} onCreate={(p, then) => void create(p, then)} />}
       {renaming && (
         <Modal title="Rename project" onClose={() => setRenaming(null)}>
           <form onSubmit={(e) => { e.preventDefault(); const v = (new FormData(e.currentTarget).get('n') as string).trim(); if (v) void mutateStored(renaming.id, (x) => { x.name = v; }); setRenaming(null); }}>

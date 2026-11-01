@@ -50,10 +50,12 @@ The scene is the source of truth. Renders and reports are outputs generated from
 | `Floor` | `id, level, elevation, ceilingHeight` |
 | `Wall` | `a, b, height, thickness, materialId (face A), materialIdB (face B), source, confidence?` |
 | `Opening` | `wallId, type (door/window), offset (m from wall start to centre), width, height, sill, confidence?` |
-| `Room` | `polygon[], roomType, floorMaterialId, ceilingMaterialId, source` |
+| `Room` | `polygon[], roomType, floorMaterialId, ceilingMaterialId, ceiling? {type, drop, border, coveLight, lightWarmth, spotlights}, source` |
 | `SceneObject` | `assetId, x, y, elevation, rotation, dims{w,h,d}, colorHex, materialId?, estimated?, imageDataUrl?, price` |
 | `Material` | `kind, colorHex, roughness, metalness, pattern \| textureDataUrl, textureScale, pricePerM2` |
 | `Lighting` | `sunIntensity, sunAzimuth, sunElevation, ambient, warmth, roomLights` |
+
+Room photos live on the project, not the scene: `Project.photos[]` = `SitePhoto {assetId, w, h, roomId?, regions[], stickers[], measure?}`. A `PhotoRegion` is a polygon and/or a magic-select seed + tolerance, a surface (wall/ceiling/floor) and a finish (paint HEX or material + repeat, optional perspective quad). Image bytes are in `Project.assets`. The photo engine (`lib/photo.ts`) keeps photo shading by multiplying the finish colour by pixel brightness ÷ the area's mean brightness, and maps tiles through a homography. *Measure → 3D room* uses a floor homography from the 4 clicked corners to the tape-measured rectangle.
 
 `confidence` set to `undefined` means a human has confirmed the item. Detected items keep their score until you press **Confirm**. To change the schema, bump `SCENE_SCHEMA_VERSION` and add a step to `lib/migrate.ts`.
 

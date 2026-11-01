@@ -3,8 +3,8 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, TransformControls, PointerLockControls, Sky, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEditor } from '../store/editor';
-import type { Material, Opening, Room, Scene, SceneObject, Wall } from '../lib/types';
-import { bbox, normalizeOpening, projectOnSegment, segmentWall, spanBreaks, wallAngle, wallLength, wallMaterialAt } from '../lib/geometry';
+import type { CeilingDesign, Material, Opening, Pt, Room, Scene, SceneObject, Wall } from '../lib/types';
+import { bbox, insetPolygon, normalizeOpening, projectOnSegment, segmentWall, spanBreaks, wallAngle, wallLength, wallMaterialAt } from '../lib/geometry';
 import { getMaterialTexture } from './textures';
 import { FurnitureModel } from './Furniture';
 import { getAsset } from '../lib/catalog';
@@ -131,14 +131,134 @@ function RoomMesh({ room, materials, elevation, ceilingHeight, showCeiling, sele
       <mesh geometry={geom} rotation={[-Math.PI / 2, 0, 0]} position={[0, elevation + 0.005, 0]} receiveShadow onClick={onSelect}>
         <SurfaceMat m={fm} u={1} v={1} selected={selected} />
       </mesh>
+      {/* ceilings face down (single-sided), so the dollhouse view from above still sees into the room */}
       {showCeiling && (
         <mesh geometry={ceilGeom} rotation={[Math.PI / 2, 0, 0]} position={[0, elevation + ceilingHeight, 0]}>
-          <SurfaceMat m={cm} u={1} v={1} side={THREE.DoubleSide} />
+          <SurfaceMat m={cm} u={1} v={1} side={THREE.FrontSide} />
         </mesh>
+      )}
+      {showCeiling && room.ceiling && room.ceiling.type !== 'none' && (
+        <FalseCeiling room={room} design={room.ceiling} top={elevation + ceilingHeight} materials={materials} lightsOn={lights} />
       )}
       {lights && (
         <pointLight position={[(b.minX + b.maxX) / 2, elevation + ceilingHeight - 0.3, (b.minY + b.maxY) / 2]} intensity={1.2} distance={Math.max(6, (b.maxX - b.minX) * 1.6)} decay={1.6} color="#ffe2bd" />
       )}
+    </group>
+  );
+}
+
+const warmColor = (k: number) => new THREE.Color('#e8f0ff').lerp(new THREE.Color('#ffc978'), k);
+
+/** Vertical band along each edge of a closed outline (false-ceiling fascia). */
+function EdgeBands({ pts, y, h, t, color, emissive }: { pts: Pt[]; y: number; h: number; t: number; color: string; emissive?: THREE.Color }) {
+  return (
+    <>
+      {pts.map((p, i) => {
+        const q = pts[(i + 1) % pts.length];
+        const L = Math.hypot(q.x - p.x, q.y - p.y);
+        const ang = Math.atan2(q.y - p.y, q.x - p.x);
+        return (
+          <mesh key={i} position={[(p.x + q.x) / 2, y + h / 2, (p.y + q.y) / 2]} rotation={[0, -ang, 0]}>
+            <boxGeometry args={[L, h, t]} />
+            {emissive ? <meshStandardMaterial color={emissive} emissive={emissive} emissiveIntensity={2.4} toneMapped={false} /> : <meshStandardMaterial color={color} roughness={0.9} />}
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
+/** Gypsum/POP false ceiling: dropped border ring, fascia, optional cove LED, spotlights, layered tier, circle or wooden slats. */
+function FalseCeiling({ room, design, top, materials, lightsOn }: { room: Room; design: CeilingDesign; top: number; materials: Scene['materials']; lightsOn: boolean }) {
+  const poly = room.polygon;
+  const m = materials[design.materialId ?? room.ceilingMaterialId] ?? materials['ceiling-white'];
+  const accent = materials[design.accentMaterialId ?? 'wood-oak'];
+  const glow = useMemo(() => warmColor(design.lightWarmth), [design.lightWarmth]);
+  const b = bbox(poly);
+  const geo = useMemo(() => {
+    const y0 = top - design.drop;
+    const inner = design.type === 'circular' ? null : insetPolygon(poly, design.border);
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    const radius = Math.max(0.4, Math.min(b.maxX - b.minX, b.maxY - b.minY) / 2 - design.border);
+    const outer = new THREE.Shape(poly.map((p) => new THREE.Vector2(p.x, p.y)));
+    if (design.type === 'circular') {
+      const hole = new THREE.Path(); hole.absarc(cx, cy, radius, 0, Math.PI * 2, true); outer.holes.push(hole);
+    } else if (inner) {
+      outer.holes.push(new THREE.Path(inner.map((p) => new THREE.Vector2(p.x, p.y))));
+    }
+    const ring = new THREE.ShapeGeometry(outer, 48);
+    let tier: { geo: THREE.ShapeGeometry; inner2: Pt[] } | null = null;
+    if (design.type === 'layered' && inner) {
+      const inner2 = insetPolygon(poly, design.border + 0.35);
+      if (inner2) {
+        const s2 = new THREE.Shape(inner.map((p) => new THREE.Vector2(p.x, p.y)));
+        s2.holes.push(new THREE.Path(inner2.map((p) => new THREE.Vector2(p.x, p.y))));
+        tier = { geo: new THREE.ShapeGeometry(s2), inner2 };
+      }
+    }
+    // spotlight positions along the middle of the border band
+    const mid = design.type === 'circular' ? null : insetPolygon(poly, design.border / 2);
+    const spots: Pt[] = [];
+    if (design.spotlights && mid) {
+      mid.forEach((p, i) => {
+        const q = mid[(i + 1) % mid.length]; const L = Math.hypot(q.x - p.x, q.y - p.y); const n = Math.max(1, Math.floor(L / 1.2));
+        for (let k = 0; k < n; k++) { const t = (k + 0.5) / n; spots.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t }); }
+      });
+    }
+    return { y0, inner, ring, tier, cx, cy, radius, spots };
+  }, [poly, design.type, design.border, design.drop, design.spotlights, top, b.minX, b.maxX, b.minY, b.maxY]);
+  if (design.type === 'none') return null;
+  const { y0, inner, ring, tier, cx, cy, radius, spots } = geo;
+  const fasciaTop = design.coveLight ? top - 0.1 : top;
+  const lastInner = tier?.inner2 ?? inner;
+  const lastY = tier ? y0 + 0.12 : y0;
+  return (
+    <group>
+      <mesh geometry={ring} rotation={[Math.PI / 2, 0, 0]} position={[0, y0, 0]}>
+        <SurfaceMat m={m} u={1} v={1} side={THREE.FrontSide} />
+      </mesh>
+      {inner && <EdgeBands pts={inner} y={y0} h={(tier ? y0 + 0.12 : fasciaTop) - y0} t={0.03} color={m?.colorHex ?? '#ffffff'} />}
+      {tier && (
+        <>
+          <mesh geometry={tier.geo} rotation={[Math.PI / 2, 0, 0]} position={[0, y0 + 0.12, 0]}><SurfaceMat m={m} u={1} v={1} side={THREE.FrontSide} /></mesh>
+          <EdgeBands pts={tier.inner2} y={y0 + 0.12} h={fasciaTop - y0 - 0.12} t={0.03} color={m?.colorHex ?? '#ffffff'} />
+        </>
+      )}
+      {design.type === 'circular' && (
+        <mesh position={[cx, (y0 + fasciaTop) / 2, cy]}>
+          <cylinderGeometry args={[radius, radius, fasciaTop - y0, 64, 1, true]} />
+          <meshStandardMaterial color={m?.colorHex ?? '#ffffff'} roughness={0.9} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      {/* cove LED strip on the upper edge of the drop, glowing onto the slab */}
+      {design.coveLight && lastInner && <EdgeBands pts={insetPolygon(lastInner, -0.06) ?? lastInner} y={lastY + 0.015} h={0.012} t={0.03} color="#fff" emissive={glow} />}
+      {design.coveLight && design.type === 'circular' && (
+        <mesh position={[cx, y0 + 0.02, cy]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[radius + 0.06, 0.012, 8, 64]} /><meshStandardMaterial color={glow} emissive={glow} emissiveIntensity={2.4} toneMapped={false} /></mesh>
+      )}
+      {spots.map((p, i) => (
+        <mesh key={i} position={[p.x, y0 - 0.004, p.y]} rotation={[Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.045, 16]} />
+          <meshStandardMaterial color="#fffaf0" emissive={glow} emissiveIntensity={lightsOn ? 2 : 0.4} toneMapped={false} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {design.type === 'wooden-slats' && inner && (() => {
+        const ib = bbox(inner);
+        const alongX = ib.maxX - ib.minX >= ib.maxY - ib.minY;
+        const span = alongX ? ib.maxY - ib.minY : ib.maxX - ib.minX;
+        const n = Math.floor(span / 0.14);
+        return Array.from({ length: n }).map((_, i) => {
+          const off = (alongX ? ib.minY : ib.minX) + 0.07 + i * 0.14;
+          const len = alongX ? ib.maxX - ib.minX : ib.maxY - ib.minY;
+          const ccx = alongX ? (ib.minX + ib.maxX) / 2 : off, ccy = alongX ? off : (ib.minY + ib.maxY) / 2;
+          return (
+            <mesh key={i} position={[ccx, top - 0.05, ccy]} castShadow>
+              <boxGeometry args={alongX ? [len, 0.06, 0.045] : [0.045, 0.06, len]} />
+              <SurfaceMat m={accent} u={len} v={0.2} />
+            </mesh>
+          );
+        });
+      })()}
+      {lightsOn && design.coveLight && <pointLight position={[cx, y0 + 0.05, cy]} intensity={0.9} distance={Math.max(5, b.maxX - b.minX + b.maxY - b.minY)} decay={1.5} color={glow} />}
     </group>
   );
 }
@@ -205,7 +325,7 @@ function CameraRig({ scene }: { scene: Scene }) {
     const pts = scene.walls.flatMap((w) => [w.a, w.b]);
     const b = bbox(pts.length ? pts : [{ x: -5, y: -4 }, { x: 5, y: 4 }]);
     const cx = (b.minX + b.maxX) / 2, cz = (b.minY + b.maxY) / 2;
-    const size = Math.max(b.maxX - b.minX, b.maxY - b.minY, 4);
+    const size = Math.max(b.maxX - b.minX, b.maxY - b.minY, 6.5);
     const pos: Record<string, [number, number, number]> = {
       perspective: [cx + size * 0.95, size * 0.8, cz + size * 1.25],
       dollhouse: [cx + size * 0.55, size * 1.55, cz + size * 0.95],
@@ -345,7 +465,7 @@ function pointInRoomPoly(p: { x: number; y: number }, poly: { x: number; y: numb
   return inside;
 }
 
-function SceneContent({ walk, gizmoMode }: { walk: boolean; gizmoMode: 'translate' | 'rotate' }) {
+function SceneContent({ walk, gizmoMode, showCeilings }: { walk: boolean; gizmoMode: 'translate' | 'rotate'; showCeilings: boolean }) {
   const scene = useEditor((s) => s.project?.scene)!;
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
@@ -393,7 +513,7 @@ function SceneContent({ walk, gizmoMode }: { walk: boolean; gizmoMode: 'translat
           {f.level > 0 && scene.rooms.filter((r) => r.floorId === f.id).length === 0 && null}
           {scene.rooms.filter((r) => r.floorId === f.id).map((r) => (
             <RoomMesh key={r.id} room={r} materials={scene.materials} elevation={f.elevation} ceilingHeight={f.ceilingHeight}
-              showCeiling={walk || f.level < activeLevel} lights={L.roomLights && (walk || L.sunElevation < 12)}
+              showCeiling={walk || showCeilings || f.level < activeLevel} lights={L.roomLights && (walk || L.sunElevation < 12)}
               selected={selection?.kind === 'room' && selection.id === r.id} onSelect={stop(() => select({ kind: 'room', id: r.id }))} />
           ))}
           {scene.walls.filter((w) => w.floorId === f.id).map((w) => (
@@ -426,6 +546,7 @@ function webglAvailable() {
 
 export default function Viewport3D({ walk = false }: { walk?: boolean }) {
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate');
+  const [showCeilings, setShowCeilings] = useState(true);
   const selection = useEditor((s) => s.selection);
   const setCamPreset = useEditor((s) => s.setCamPreset);
   const ok = useMemo(webglAvailable, []);
@@ -444,7 +565,7 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
       <Canvas shadows dpr={[1, 2]} gl={{ preserveDrawingBuffer: true, antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
         camera={{ fov: walk ? 70 : 45, near: 0.05, far: 500, position: [12, 10, 14] }}>
         <Suspense fallback={null}>
-          <SceneContent walk={walk} gizmoMode={gizmoMode} />
+          <SceneContent walk={walk} gizmoMode={gizmoMode} showCeilings={showCeilings} />
         </Suspense>
       </Canvas>
       {walk ? (
@@ -463,6 +584,7 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
         </>
       ) : (
         <div className="absolute left-3 top-3 flex gap-1">
+          <button onClick={() => setShowCeilings(!showCeilings)} className={`rounded-md px-2.5 py-1 text-xs backdrop-blur ${showCeilings ? 'bg-amber-500 text-stone-950' : 'bg-stone-900/80 text-stone-200 hover:bg-stone-800'}`} title="Show ceilings & false ceilings (visible from inside rooms)">Ceilings</button>
           {(['perspective', 'dollhouse', 'top', 'front'] as const).map((p) => (
             <button key={p} onClick={() => setCamPreset(p)} className="rounded-md bg-stone-900/80 px-2.5 py-1 text-xs capitalize text-stone-200 backdrop-blur hover:bg-stone-800" title={`Camera: ${p}`}>{p}</button>
           ))}

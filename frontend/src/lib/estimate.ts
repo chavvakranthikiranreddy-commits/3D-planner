@@ -1,13 +1,14 @@
 import type { Project, Room, Scene } from './types';
 import { polygonArea, wallLength, wallMaterialAt } from './geometry';
 import { roomWallSides } from './placement';
+import { CEILING_TYPES, SQFT_PER_M2 } from './interiors';
 
 /**
  * Indicative quantities & costs. Every line records its source and confidence (spec: EstimateLine).
  * Catalog rates are placeholder values in the project's currency symbol; changing the symbol does not convert them.
  */
 export interface EstimateLine {
-  roomId?: string; item: string; itemType: 'flooring' | 'paint' | 'product';
+  roomId?: string; item: string; itemType: 'flooring' | 'paint' | 'ceiling' | 'product';
   quantity: number; unit: string; unitPrice: number; total: number;
   source: string; confidence: 'measured' | 'estimated';
 }
@@ -57,6 +58,11 @@ export function buildEstimate(p: Project): EstimateLine[] {
     const fm = s.materials[r.floorMaterialId];
     const qty = +(area * FLOOR_WASTAGE).toFixed(2);
     lines.push({ roomId: r.id, item: `${r.name} — ${fm?.name ?? 'Flooring'} (+10% wastage)`, itemType: 'flooring', quantity: qty, unit: 'm²', unitPrice: fm?.pricePerM2 ?? 0, total: qty * (fm?.pricePerM2 ?? 0), source: 'Plan area × catalog rate', confidence: r.source === 'detected' ? 'estimated' : 'measured' });
+    if (r.ceiling && r.ceiling.type !== 'none') {
+      const ct = CEILING_TYPES.find((c) => c.type === r.ceiling!.type)!;
+      const sqft = +(area * SQFT_PER_M2).toFixed(0);
+      lines.push({ roomId: r.id, item: `${r.name} — false ceiling: ${ct.label}${r.ceiling.coveLight ? ' + cove LED' : ''}`, itemType: 'ceiling', quantity: sqft, unit: 'sq ft', unitPrice: ct.ratePerSqft, total: sqft * ct.ratePerSqft, source: 'Ceiling area × 2026 market rate (placeholder)', confidence: 'estimated' });
+    }
     for (const [matId, wa] of roomWallFinishes(s, r)) {
       if (wa < 0.05) continue;
       const wm = s.materials[matId];

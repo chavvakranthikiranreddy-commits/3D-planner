@@ -18,6 +18,7 @@ import { polygonArea, fmtArea, setWallSpanMaterial } from './geometry';
 import { parseColorInput, rgbToHex, hexToRgb } from './materials';
 import { applyChanges, localProvider } from './ai';
 import { findSpot, objectInRoom, roomWallSides } from './placement';
+import { CEILING_TYPES, defaultCeiling } from './interiors';
 import { makeObject, uid } from './templates';
 
 export interface ChatImage {
@@ -76,12 +77,23 @@ export const COLOR_NAMES: Record<string, string> = {
 };
 
 const MATERIAL_WORDS: [RegExp, string][] = [
+  [/\bwhite fluted|fluted white\b/, 'panel-fluted-white'], [/\bfluted\b/, 'panel-fluted-walnut'], [/\b(wood(en)? (slat|panel|panelling)s?|slat panel)\b/, 'panel-wood-slat'],
+  [/\b(leaf|botanical|green) wallpaper\b/, 'wallpaper-botanical'], [/\bwall ?paper\b/, 'wallpaper-damask'], [/\b(stone cladding|cladding)\b/, 'stone-cladding'],
+  [/\b(exposed )?brick\b/, 'brick-exposed'], [/\b(texture(d)? paint|textured)\b/, 'texture-plaster'],
   [/\bherring ?bone\b/, 'wood-herringbone'], [/\bwalnut\b/, 'wood-walnut'], [/\b(oak|wood|wooden|timber|laminate|parquet)\b/, 'wood-oak'],
   [/\b(italian marble|marble)\b/, 'stone-marble'], [/\bterrazzo\b/, 'stone-terrazzo'], [/\b(granite|slate|kota)\b/, 'tile-slate'],
   [/\b(vitrified|tiles?|ceramic)\b/, 'tile-vitrified'], [/\b(concrete|cement|microcement)\b/, 'concrete'], [/\b(linen|fabric)\b/, 'fabric-linen'],
 ];
 
 const ITEM_WORDS: [RegExp, string][] = [
+  [/\b(tv wall|tv panel|tv back ?panel|media wall)\b/, 'tv-wall'], [/\b(sliding wardrobe|wardrobe with loft|sliding almirah)\b/, 'wardrobe-sliding'],
+  [/\b(l[- ]?shaped kitchen|l kitchen|modular kitchen)\b/, 'kitchen-l'], [/\b(parallel kitchen|straight kitchen|kitchen run)\b/, 'kitchen-parallel'],
+  [/\b(floating shel(?:f|ves)|wall shel(?:f|ves))\b/, 'floating-shelves'], [/\b(book ?wall|library wall|niches?)\b/, 'book-wall'],
+  [/\b(crockery unit|crockery cabinet|bar unit)\b/, 'crockery-unit'], [/\b(study unit|study table with storage)\b/, 'study-unit'],
+  [/\b(dressing (table|unit)|dresser)\b/, 'dressing-unit'], [/\b(shoe (rack|cabinet)|foyer console)\b/, 'shoe-cabinet'],
+  [/\b(jaali|jali|lattice)( partition| screen)?\b/, 'jaali-partition'], [/\b((fluted )?glass partition|partition)\b/, 'fluted-glass-partition'],
+  [/\b(feature (wall )?panel|wall panel)\b/, 'feature-panel'], [/\b(curtains?|drapes)\b/, 'curtains'], [/\b(blinds?|roller blinds?)\b/, 'roller-blind'],
+  [/\b(chandelier)\b/, 'chandelier'],
   [/\b(l[- ]?shaped?|sectional|corner) (sofa|couch|sofa set)\b|\bsectional\b/, 'sofa-l'], [/\b(loveseat|2[- ]seater|two[- ]seater)\b/, 'sofa-2'],
   [/\b(sofa set|sofa|couch|3[- ]seater)\b/, 'sofa-3'], [/\b(arm ?chair|accent chair|lounge chair)\b/, 'armchair'],
   [/\b(office chair|task chair|desk chair|study chair)\b/, 'office-chair'], [/\b(bar stools?|stools?)\b/, 'bar-stool'],
@@ -101,7 +113,7 @@ const ITEM_WORDS: [RegExp, string][] = [
 ];
 
 /** Items that belong against a wall, facing into the room. */
-const WALL_ITEMS = new Set(['sofa-3', 'sofa-2', 'sofa-l', 'bed-king', 'bed-queen', 'bed-single', 'wardrobe', 'bookshelf', 'tv-unit', 'sideboard', 'kitchen-base', 'kitchen-wall', 'vanity', 'wc', 'desk', 'pooja-unit', 'art', 'mirror', 'fridge']);
+const WALL_ITEMS = new Set(['tv-wall', 'wardrobe-sliding', 'kitchen-l', 'kitchen-parallel', 'floating-shelves', 'book-wall', 'crockery-unit', 'study-unit', 'dressing-unit', 'shoe-cabinet', 'feature-panel', 'curtains', 'roller-blind', 'sofa-3', 'sofa-2', 'sofa-l', 'bed-king', 'bed-queen', 'bed-single', 'wardrobe', 'bookshelf', 'tv-unit', 'sideboard', 'kitchen-base', 'kitchen-wall', 'vanity', 'wc', 'desk', 'pooja-unit', 'art', 'mirror', 'fridge']);
 
 const STYLE_WORDS: [RegExp, AssetStyle][] = [
   [/\bscandi(navian)?\b/, 'scandinavian'], [/\bindustrial\b/, 'industrial'], [/\b(indian|traditional indian|ethnic)\b/, 'indian-contemporary'],
@@ -330,6 +342,27 @@ export function runCommand(
   const wantsImage = !!image && (/\b(this|the|that|my|attached|uploaded)\s+(image|photo|pic|picture|design|product|one|sofa|bed|item)\b|\b(it|this)\b/.test(t) || !findItem(rest));
   const room = hit.room;
   const needRoom = (): ChatOutcome => ({ ok: false, reply: hit.error ?? `Which room? Say e.g. "the hall", "first bedroom" or "room 2".${scene.rooms.length ? `\n${roomList(scene)}` : ''}`, suggestions: scene.rooms.slice(0, 3).map((r) => `${raw.trim()} in ${r.name}`) });
+
+  // ── false ceiling: "add cove false ceiling to the hall", "remove false ceiling from kitchen"
+  if (/\b(false ceiling|pop ceiling|gypsum ceiling|ceiling design|cove( light(ing)?)?|tray ceiling|layered ceiling|circular ceiling|wooden ceiling|slat ceiling)\b/.test(t)) {
+    if (!room) return needRoom();
+    const id = room.id;
+    if (/\b(remove|delete|no|without|clear)\b/.test(t)) return { ok: true, reply: `Removed the false ceiling from ${room.name}.`, edit: (s) => { const r = s.rooms.find((x) => x.id === id); if (r) r.ceiling = undefined; }, select: { kind: 'room', id } };
+    const type = /\blayer|2[- ]step|double\b/.test(t) ? 'layered' : /\bcircular|round|circle\b/.test(t) ? 'circular' : /\bwood|slat\b/.test(t) ? 'wooden-slats' : /\bborder|simple|plain|spot/.test(t) && !/\bcove\b/.test(t) ? 'border' : 'cove-tray';
+    const ct = CEILING_TYPES.find((c) => c.type === type)!;
+    const design = defaultCeiling(type);
+    if (/\bcool|white light\b/.test(t)) design.lightWarmth = 0.15;
+    if (/\bwarm\b/.test(t)) design.lightWarmth = 0.85;
+    const area = polygonArea(room.polygon) * 10.7639;
+    const fl = scene.floors.find((f) => f.id === room.floorId);
+    const low = fl && fl.ceilingHeight < 2.85 && type !== 'border';
+    return {
+      ok: true,
+      reply: `Added a ${ct.label.toLowerCase()} false ceiling to ${room.name} (about ${Math.round(area)} sq ft × ~₹${ct.ratePerSqft}/sq ft ≈ ₹${Math.round(area * ct.ratePerSqft).toLocaleString('en-IN')}, indicative).${low ? ' Note: this room is under 9.5 ft high — a slim border ceiling keeps more headroom.' : ''} Turn on “Ceilings” in the 3D view or walk inside to see it.`,
+      edit: (s) => { const r = s.rooms.find((x) => x.id === id); if (r) r.ceiling = design; },
+      select: { kind: 'room', id },
+    };
+  }
 
   // ── style: "make the hall luxury"
   const style = STYLE_WORDS.find(([re]) => re.test(rest))?.[1];

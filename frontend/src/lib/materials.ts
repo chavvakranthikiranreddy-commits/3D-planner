@@ -20,6 +20,21 @@ export const MATERIAL_PRESETS: Material[] = [
   { id: 'metal-brass', name: 'Brushed Brass', kind: 'metal', colorHex: '#b38b4d', roughness: 0.35, metalness: 0.85, pattern: 'none', pricePerM2: 5000 },
   { id: 'metal-black', name: 'Matte Black Metal', kind: 'metal', colorHex: '#202022', roughness: 0.5, metalness: 0.7, pattern: 'none', pricePerM2: 3000 },
   { id: 'ceiling-white', name: 'Ceiling White', kind: 'paint', colorHex: '#fbfaf7', roughness: 0.95, metalness: 0, pattern: 'none', pricePerM2: 30 },
+  // 2026 Indian palette: warm white base with one feature wall in sage, muted navy or plaster pink
+  { id: 'paint-warm-white', name: 'Warm White', kind: 'paint', colorHex: '#f2ece1', roughness: 0.92, metalness: 0, pattern: 'none', pricePerM2: 36 },
+  { id: 'paint-plaster-pink', name: 'Plaster Pink', kind: 'paint', colorHex: '#e3b9a8', roughness: 0.9, metalness: 0, pattern: 'none', pricePerM2: 42 },
+  { id: 'paint-muted-navy', name: 'Muted Navy', kind: 'paint', colorHex: '#3d4b63', roughness: 0.9, metalness: 0, pattern: 'none', pricePerM2: 42 },
+  { id: 'paint-olive', name: 'Olive', kind: 'paint', colorHex: '#8a8a5c', roughness: 0.9, metalness: 0, pattern: 'none', pricePerM2: 42 },
+  { id: 'paint-clay', name: 'Clay Brown', kind: 'paint', colorHex: '#a46a4f', roughness: 0.9, metalness: 0, pattern: 'none', pricePerM2: 42 },
+  // wall finishes & panelling (rates are indicative placeholders per m², supply + install)
+  { id: 'texture-plaster', name: 'Texture Paint', kind: 'paint', colorHex: '#d8cfc2', roughness: 0.95, metalness: 0, pattern: 'texture-plaster', textureScale: 1.2, pricePerM2: 130 },
+  { id: 'panel-fluted-white', name: 'Fluted Panel – White', kind: 'wood', colorHex: '#ece7de', roughness: 0.6, metalness: 0, pattern: 'fluted', textureScale: 0.6, pricePerM2: 1900 },
+  { id: 'panel-fluted-walnut', name: 'Fluted Panel – Walnut', kind: 'wood', colorHex: '#6b4a33', roughness: 0.55, metalness: 0, pattern: 'fluted', textureScale: 0.6, pricePerM2: 2700 },
+  { id: 'panel-wood-slat', name: 'Wood Slat Panel', kind: 'wood', colorHex: '#a87a4f', roughness: 0.6, metalness: 0, pattern: 'wood-panel', textureScale: 0.8, pricePerM2: 2400 },
+  { id: 'wallpaper-damask', name: 'Wallpaper – Damask', kind: 'fabric', colorHex: '#d9c9b0', roughness: 0.85, metalness: 0, pattern: 'wallpaper', textureScale: 0.7, pricePerM2: 450 },
+  { id: 'wallpaper-botanical', name: 'Wallpaper – Sage Leaf', kind: 'fabric', colorHex: '#a8b5a0', roughness: 0.85, metalness: 0, pattern: 'wallpaper', textureScale: 0.7, pricePerM2: 480 },
+  { id: 'stone-cladding', name: 'Stone Cladding', kind: 'stone', colorHex: '#9c948a', roughness: 0.85, metalness: 0, pattern: 'stone-cladding', textureScale: 1.2, pricePerM2: 1600 },
+  { id: 'brick-exposed', name: 'Exposed Brick', kind: 'stone', colorHex: '#a5583f', roughness: 0.9, metalness: 0, pattern: 'brick', textureScale: 1.0, pricePerM2: 1200 },
 ];
 
 export function defaultMaterials(): Record<string, Material> {

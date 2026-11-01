@@ -11,7 +11,7 @@ import type { Material } from '../../lib/types';
 
 const DEFAULT_DIMS: Record<AssetCategory, { w: number; h: number; d: number }> = {
   seating: { w: 0.9, h: 0.85, d: 0.85 }, tables: { w: 1.2, h: 0.75, d: 0.7 }, beds: { w: 1.6, h: 1, d: 2.1 }, storage: { w: 1, h: 1.2, d: 0.45 },
-  kitchen: { w: 0.6, h: 0.9, d: 0.6 }, bath: { w: 0.6, h: 0.85, d: 0.5 }, lighting: { w: 0.4, h: 0.6, d: 0.4 }, decor: { w: 0.6, h: 0.6, d: 0.1 }, office: { w: 1.2, h: 0.75, d: 0.6 },
+  kitchen: { w: 0.6, h: 0.9, d: 0.6 }, carpentry: { w: 1.5, h: 2.1, d: 0.5 }, furnishing: { w: 2.0, h: 2.6, d: 0.15 }, bath: { w: 0.6, h: 0.85, d: 0.5 }, lighting: { w: 0.4, h: 0.6, d: 0.4 }, decor: { w: 0.6, h: 0.6, d: 0.1 }, office: { w: 1.2, h: 0.75, d: 0.6 },
 };
 
 /** Reference photo → catalog match or a clearly-labelled approximation; also palette sampling. */

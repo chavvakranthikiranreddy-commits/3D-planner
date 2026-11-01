@@ -6,12 +6,13 @@ import Dashboard from './pages/Dashboard';
 import Editor from './pages/Editor';
 import ImportWizard from './pages/ImportWizard';
 import Settings from './pages/Settings';
+import PhotoStudio from './pages/PhotoStudio';
 import { Btn } from './components/ui';
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, '');
   const [page, id] = h.split('/');
-  if ((page === 'editor' || page === 'import') && id) return { page, id };
+  if ((page === 'editor' || page === 'import' || page === 'photos') && id) return { page, id };
   if (page === 'settings') return { page: 'settings' };
   return { page: 'dashboard' };
 }
@@ -47,7 +48,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (route.page !== 'editor' && route.page !== 'import') return;
+    if (route.page !== 'editor' && route.page !== 'import' && route.page !== 'photos') return;
     setMissing(false);
     void useEditor.getState().openProject(route.id).then((ok) => setMissing(!ok)).catch((e) => { console.error(e); setMissing(true); });
   }, [route]);
@@ -63,7 +64,7 @@ export default function App() {
     </div>
   );
   else if (!project || project.id !== route.id) body = <div className="flex h-dvh items-center justify-center bg-stone-950 text-stone-500"><Loader2 className="animate-spin" /></div>;
-  else body = route.page === 'import' ? <ImportWizard /> : <Editor />;
+  else body = route.page === 'import' ? <ImportWizard /> : route.page === 'photos' ? <PhotoStudio /> : <Editor />;
 
   return <>{body}<Toasts /></>;
 }

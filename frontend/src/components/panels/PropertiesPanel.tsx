@@ -3,6 +3,7 @@ import { useEditor } from '../../store/editor';
 import { Badge, Btn, Empty, Field, LenField, NumField, Section, TextInput, inputCls } from '../ui';
 import { applyAttachments, attachmentsAt, fmtArea, fmtLen, pointInPolygon, polygonArea, polygonPerimeter, wallAngle, wallLength } from '../../lib/geometry';
 import { getAsset } from '../../lib/catalog';
+import { CEILING_TYPES, ceilingClearance, defaultCeiling } from '../../lib/interiors';
 import { parseColorInput } from '../../lib/materials';
 import { uid } from '../../lib/templates';
 import type { Opening, Room, RoomType, SceneObject, Wall } from '../../lib/types';
@@ -228,6 +229,34 @@ export default function PropertiesPanel() {
             <button onClick={() => setRightTab('materials', 'room-walls')} className="col-span-2 flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
               <Palette size={14} /> Paint this room's walls
             </button>
+          </div>
+          <div className="space-y-2 rounded-md border border-stone-700 p-2">
+            <Field label="False ceiling">
+              <select className={inputCls} value={r.ceiling?.type ?? 'none'} onChange={(e) => upd((x) => { const t = e.target.value as typeof CEILING_TYPES[number]['type']; x.ceiling = t === 'none' ? undefined : { ...defaultCeiling(t), materialId: x.ceiling?.materialId }; })}>
+                {CEILING_TYPES.map((c) => <option key={c.type} value={c.type}>{c.label}{c.ratePerSqft ? ` · ~₹${c.ratePerSqft}/sq ft` : ''}</option>)}
+              </select>
+            </Field>
+            {r.ceiling && (() => {
+              const c = r.ceiling;
+              const fl = s.floors.find((f) => f.id === r.floorId);
+              const cl = ceilingClearance(fl?.ceilingHeight ?? 3, c);
+              return (
+                <>
+                  <p className="text-[11px] text-stone-500">{CEILING_TYPES.find((t) => t.type === c.type)?.note}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Drop"><LenField meters={c.drop} units={u} min={0.08} max={0.6} onCommit={(v) => upd((x) => { x.ceiling!.drop = v; })} /></Field>
+                    <Field label="Border width"><LenField meters={c.border} units={u} min={0.2} max={2} onCommit={(v) => upd((x) => { x.ceiling!.border = v; })} /></Field>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-stone-300"><input type="checkbox" className="accent-amber-500" checked={c.coveLight} onChange={(e) => upd((x) => { x.ceiling!.coveLight = e.target.checked; })} /> Cove LED strip</label>
+                  <label className="flex items-center gap-2 text-sm text-stone-300"><input type="checkbox" className="accent-amber-500" checked={c.spotlights} onChange={(e) => upd((x) => { x.ceiling!.spotlights = e.target.checked; })} /> Spotlights in the border</label>
+                  <Field label={`Light colour · ${c.lightWarmth < 0.35 ? 'cool white' : c.lightWarmth < 0.7 ? 'neutral' : 'warm white'}`}>
+                    <input type="range" min={0} max={1} step={0.05} value={c.lightWarmth} onChange={(e) => { const v = +e.target.value; mutate((sc) => { const x = sc.rooms.find((q) => q.id === r.id); if (x?.ceiling) x.ceiling.lightWarmth = v; }, 'ceil-warm:' + r.id); }} className="w-full accent-amber-500" />
+                  </Field>
+                  <p className={`text-[11px] ${cl.ok ? 'text-stone-500' : 'text-amber-300'}`}>Clear height under the drop: {fmtLen(cl.clear, u)}.{cl.ok ? '' : ' Cove ceilings are usually recommended for rooms about 9.5 ft (2.9 m) high or more — consider a slimmer border.'}</p>
+                  <p className="text-[11px] text-stone-500">Tip: switch on “Ceilings” in the 3D view or use Walk to see it from inside.</p>
+                </>
+              );
+            })()}
           </div>
           <p className="text-[11px] text-stone-500">Drag the room or its corner handles in the 2D plan to reshape it.</p>
           <div className="flex gap-1.5">

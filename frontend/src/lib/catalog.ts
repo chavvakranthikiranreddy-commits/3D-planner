@@ -1,4 +1,4 @@
-export type AssetCategory = 'seating' | 'tables' | 'beds' | 'storage' | 'kitchen' | 'bath' | 'lighting' | 'decor' | 'office';
+export type AssetCategory = 'seating' | 'tables' | 'beds' | 'storage' | 'carpentry' | 'kitchen' | 'bath' | 'lighting' | 'furnishing' | 'decor' | 'office';
 export type AssetStyle = 'modern' | 'scandinavian' | 'industrial' | 'classic' | 'indian-contemporary' | 'minimal' | 'boho' | 'luxury';
 
 export interface Asset {
@@ -57,13 +57,30 @@ export const CATALOG: Asset[] = [
   { id: 'art', name: 'Wall Art Frame', category: 'decor', builder: 'frame', dims: { w: 1.0, h: 0.7, d: 0.04 }, colorHex: '#c46a4a', accentHex: '#1f1f1f', elevation: 1.3, styles: ['modern', 'boho', 'minimal', 'luxury'], price: 4500, licence: L, source: S },
   { id: 'mirror', name: 'Round Mirror', category: 'decor', builder: 'mirror', dims: { w: 0.7, h: 0.7, d: 0.03 }, colorHex: '#b38b4d', elevation: 1.3, styles: ['luxury', 'boho', 'modern'], price: 5500, licence: L, source: S },
   { id: 'pooja-unit', name: 'Pooja Unit', category: 'storage', builder: 'pooja', dims: { w: 0.9, h: 1.8, d: 0.45 }, colorHex: '#9a6b3f', accentHex: '#d4a94e', styles: ['indian-contemporary', 'classic'], price: 26000, licence: L, source: S },
+  // ── interior carpentry & furnishings (made-to-measure items for a newly built home)
+  { id: 'tv-wall', name: 'TV Wall Unit – Fluted, Backlit', category: 'carpentry', builder: 'tvWall', dims: { w: 2.7, h: 2.4, d: 0.45 }, colorHex: '#6b4a33', accentHex: '#ecebe8', styles: ['modern', 'luxury', 'indian-contemporary'], price: 95000, licence: L, source: S },
+  { id: 'wardrobe-sliding', name: 'Sliding Wardrobe with Loft', category: 'carpentry', builder: 'wardrobeSliding', dims: { w: 2.1, h: 2.7, d: 0.62 }, colorHex: '#e9e4da', accentHex: '#b38b4d', styles: ['modern', 'minimal', 'indian-contemporary', 'luxury'], price: 120000, licence: L, source: S },
+  { id: 'kitchen-l', name: 'L-Shaped Modular Kitchen', category: 'kitchen', builder: 'kitchenL', dims: { w: 3.0, h: 2.3, d: 2.4 }, colorHex: '#e8e4dc', accentHex: '#3a3a3c', styles: ['modern', 'minimal', 'indian-contemporary'], price: 260000, licence: L, source: S },
+  { id: 'kitchen-parallel', name: 'Parallel Kitchen Run (3 m)', category: 'kitchen', builder: 'kitchenRun', dims: { w: 3.0, h: 2.3, d: 0.62 }, colorHex: '#2f3a3a', accentHex: '#ecebe8', styles: ['modern', 'luxury'], price: 160000, licence: L, source: S },
+  { id: 'floating-shelves', name: 'Floating Shelves (set of 3)', category: 'carpentry', builder: 'floatingShelves', dims: { w: 1.2, h: 1.0, d: 0.25 }, colorHex: '#9a6b3f', elevation: 1.0, styles: ['scandinavian', 'boho', 'modern', 'minimal'], price: 9000, licence: L, source: S },
+  { id: 'book-wall', name: 'Book Wall with Lit Niches', category: 'carpentry', builder: 'bookWall', dims: { w: 2.4, h: 2.4, d: 0.35 }, colorHex: '#3a3330', accentHex: '#ffd9a0', styles: ['luxury', 'modern', 'classic'], price: 85000, licence: L, source: S },
+  { id: 'crockery-unit', name: 'Crockery Unit with Glass Top', category: 'carpentry', builder: 'crockery', dims: { w: 1.5, h: 2.1, d: 0.45 }, colorHex: '#8b6a47', accentHex: '#cfe0e6', styles: ['indian-contemporary', 'classic', 'modern'], price: 55000, licence: L, source: S },
+  { id: 'study-unit', name: 'Study Table with Overhead Storage', category: 'carpentry', builder: 'studyUnit', dims: { w: 1.5, h: 2.1, d: 0.6 }, colorHex: '#c7a57d', accentHex: '#ecebe8', styles: ['scandinavian', 'modern', 'minimal'], price: 42000, licence: L, source: S },
+  { id: 'dressing-unit', name: 'Dressing Unit with Mirror', category: 'carpentry', builder: 'dressing', dims: { w: 1.0, h: 1.9, d: 0.45 }, colorHex: '#e9e4da', accentHex: '#b38b4d', styles: ['modern', 'luxury', 'indian-contemporary'], price: 28000, licence: L, source: S },
+  { id: 'shoe-cabinet', name: 'Shoe Cabinet / Foyer Console', category: 'carpentry', builder: 'cabinet', dims: { w: 1.2, h: 1.0, d: 0.35 }, colorHex: '#6b4a33', styles: ['modern', 'indian-contemporary', 'minimal'], price: 18000, licence: L, source: S },
+  { id: 'jaali-partition', name: 'Jaali Partition Screen', category: 'carpentry', builder: 'jaali', dims: { w: 1.2, h: 2.4, d: 0.06 }, colorHex: '#9a6b3f', styles: ['indian-contemporary', 'classic', 'luxury'], price: 32000, licence: L, source: S },
+  { id: 'fluted-glass-partition', name: 'Fluted Glass Partition', category: 'carpentry', builder: 'glassPartition', dims: { w: 1.8, h: 2.4, d: 0.05 }, colorHex: '#202022', accentHex: '#dfe9ee', styles: ['modern', 'luxury', 'industrial'], price: 45000, licence: L, source: S },
+  { id: 'feature-panel', name: 'Feature Wall Panel – Fluted', category: 'carpentry', builder: 'featurePanel', dims: { w: 2.4, h: 2.7, d: 0.03 }, colorHex: '#6b4a33', styles: ['modern', 'luxury', 'indian-contemporary'], price: 38000, licence: L, source: S },
+  { id: 'curtains', name: 'Curtains (pair) with Rod', category: 'furnishing', builder: 'curtains', dims: { w: 2.2, h: 2.7, d: 0.15 }, colorHex: '#d6cbb8', accentHex: '#202022', styles: ['modern', 'scandinavian', 'classic', 'indian-contemporary', 'boho', 'luxury', 'minimal'], price: 9500, licence: L, source: S },
+  { id: 'roller-blind', name: 'Roller Blind', category: 'furnishing', builder: 'blind', dims: { w: 1.5, h: 1.6, d: 0.08 }, colorHex: '#e6dccb', elevation: 0.75, styles: ['minimal', 'modern', 'scandinavian'], price: 4500, licence: L, source: S },
+  { id: 'chandelier', name: 'Chandelier', category: 'lighting', builder: 'chandelier', dims: { w: 0.8, h: 0.7, d: 0.8 }, colorHex: '#b38b4d', elevation: 2.0, styles: ['luxury', 'classic', 'indian-contemporary'], price: 24000, licence: L, source: S },
   { id: 'box', name: 'Generic Box (custom)', category: 'decor', builder: 'box', dims: { w: 0.6, h: 0.6, d: 0.6 }, colorHex: '#9ca3af', styles: ['minimal'], price: 0, licence: L, source: S },
 ];
 
 export const CATEGORIES: { id: AssetCategory; label: string }[] = [
   { id: 'seating', label: 'Seating' }, { id: 'tables', label: 'Tables' }, { id: 'beds', label: 'Beds' },
-  { id: 'storage', label: 'Storage' }, { id: 'kitchen', label: 'Kitchen' }, { id: 'bath', label: 'Bath' },
-  { id: 'office', label: 'Office' }, { id: 'lighting', label: 'Lighting' }, { id: 'decor', label: 'Decor' },
+  { id: 'storage', label: 'Storage' }, { id: 'carpentry', label: 'Carpentry' }, { id: 'kitchen', label: 'Kitchen' }, { id: 'bath', label: 'Bath' },
+  { id: 'office', label: 'Office' }, { id: 'lighting', label: 'Lighting' }, { id: 'furnishing', label: 'Curtains & blinds' }, { id: 'decor', label: 'Decor' },
 ];
 
 export const STYLES: { id: AssetStyle; label: string }[] = [

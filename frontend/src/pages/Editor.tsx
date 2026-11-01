@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   ArrowLeft, Undo2, Redo2, MousePointer2, PenLine, Square, DoorOpen, AppWindow, Hand, Ruler, Magnet, Check, Loader2, AlertCircle,
-  SlidersHorizontal, Palette, MessageSquare, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
+  SlidersHorizontal, Palette, MessageSquare, Camera, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
 } from 'lucide-react';
 import { useEditor, type RightTab, type Tool, type View } from '../store/editor';
 import Plan2D from '../components/Plan2D';
@@ -230,6 +230,7 @@ export default function Editor() {
             </button>
           ))}
         </div>
+        <Btn title="Photo Studio — design from room photos" onClick={() => navigate({ page: 'photos', id: project.id })}><Camera size={16} /><span className="hidden lg:inline">Photos</span></Btn>
         <Btn title="Import blueprint" onClick={() => navigate({ page: 'import', id: project.id })} className="hidden md:inline-flex"><FileUp size={16} /></Btn>
         <Btn title="Keyboard shortcuts (?)" onClick={() => setHelp(true)} className="hidden md:inline-flex"><Keyboard size={16} /></Btn>
         <Btn title="Toggle side panel" onClick={() => setShowRight(!showRight)} active={showRight}><PanelRight size={16} /></Btn>

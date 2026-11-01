@@ -13,7 +13,7 @@ export type View = '2d' | '3d' | 'split' | 'walk';
 export type RightTab = 'chat' | 'properties' | 'materials' | 'catalog' | 'product' | 'ai' | 'lighting' | 'versions' | 'export';
 export type SaveState = 'saved' | 'saving' | 'unsaved' | 'error';
 export type MaterialTarget = 'floor' | 'room-walls' | 'ceiling';
-export type Route = { page: 'dashboard' } | { page: 'editor'; id: string } | { page: 'settings' } | { page: 'import'; id: string };
+export type Route = { page: 'dashboard' } | { page: 'editor'; id: string } | { page: 'settings' } | { page: 'import'; id: string } | { page: 'photos'; id: string };
 
 interface Toast { id: string; text: string; tone: 'info' | 'error' | 'success' }
 

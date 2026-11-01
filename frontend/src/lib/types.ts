@@ -18,7 +18,8 @@ export interface Material {
   roughness: number;
   metalness: number;
   /** Built-in procedural pattern or uploaded texture (data URL). */
-  pattern?: 'none' | 'wood' | 'marble' | 'tile' | 'concrete' | 'fabric' | 'herringbone' | 'terrazzo';
+  pattern?: 'none' | 'wood' | 'marble' | 'tile' | 'concrete' | 'fabric' | 'herringbone' | 'terrazzo'
+    | 'fluted' | 'wallpaper' | 'stone-cladding' | 'brick' | 'wood-panel' | 'texture-plaster';
   textureDataUrl?: string;
   textureScale?: number; // metres per texture repeat
   /** Indicative unit price per m² in project currency (for reports). */
@@ -74,7 +75,24 @@ export interface Room {
   polygon: Pt[];
   floorMaterialId: string;
   ceilingMaterialId: string;
+  /** False ceiling design (gypsum/POP) — rendered in 3D and priced in the estimate. */
+  ceiling?: CeilingDesign;
   source: Source;
+}
+
+export type CeilingType = 'none' | 'border' | 'cove-tray' | 'layered' | 'circular' | 'wooden-slats';
+export interface CeilingDesign {
+  type: CeilingType;
+  /** How far the false ceiling hangs below the slab (m). */
+  drop: number;
+  /** Width of the dropped border band (m). */
+  border: number;
+  coveLight: boolean;
+  /** 0 = cool white … 1 = warm white */
+  lightWarmth: number;
+  spotlights: boolean;
+  materialId?: string;
+  accentMaterialId?: string;
 }
 
 export type RoomType =
@@ -142,6 +160,37 @@ export interface BlueprintRef {
 /** @deprecated v0.1 single-underlay shape, migrated to Scene.blueprints + Project.assets. */
 export interface LegacyBlueprint extends Omit<BlueprintRef, 'assetId'> { dataUrl: string; floorId: string }
 
+/** Site photo with visualiser edits. Image bytes live in Project.assets. Coordinates are in photo pixels. */
+export interface SitePhoto {
+  id: string;
+  name: string;
+  assetId: string;
+  w: number;
+  h: number;
+  roomId?: string;
+  createdAt: number;
+  regions: PhotoRegion[];
+  stickers: PhotoSticker[];
+  /** Floor corners + tape measurements used to build a 3D room from this photo. */
+  measure?: { floor: Pt[]; sideA: number; sideB: number; height: number };
+}
+export interface PhotoRegion {
+  id: string;
+  name: string;
+  surface: 'wall' | 'ceiling' | 'floor' | 'other';
+  /** Outline drawn by the user (photo px). Magic-select regions are limited to this outline. */
+  polygon: Pt[];
+  /** Magic select: grow from this seed over similar colours. */
+  wand?: { seed: Pt; tolerance: number };
+  /** Perspective quad for textures (4 corners, clockwise from top-left of the surface). */
+  quad?: Pt[];
+  finish: { kind: 'paint'; hex: string } | { kind: 'material'; materialId: string; tiles: number };
+  /** 0 = keep raw plaster texture/blotches, 1 = smooth like finished paint. */
+  smooth: number;
+  visible: boolean;
+}
+export interface PhotoSticker { id: string; name: string; assetId: string; x: number; y: number; w: number; rotation: number }
+
 export interface DesignVersion {
   id: string;
   number: number;
@@ -162,8 +211,10 @@ export interface Project {
   updatedAt: number;
   thumbnail?: string;
   scene: Scene;
-  /** Large binary assets (blueprint images) by id — not part of undo history. */
+  /** Large binary assets (blueprint images, site photos, cut-outs) by id — not part of undo history. */
   assets: Record<string, string>;
+  /** Site photos for the photo visualiser. */
+  photos?: SitePhoto[];
   /** @deprecated migrated on load */
   blueprint?: LegacyBlueprint;
   versions: DesignVersion[];

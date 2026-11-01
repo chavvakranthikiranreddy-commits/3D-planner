@@ -307,6 +307,175 @@ const builders: Record<string, (p: P) => React.ReactNode> = {
   ),
 };
 
+const flutes = (w: number, h: number, z: number, c: string, y0 = 0, step = 0.05) =>
+  Array.from({ length: Math.max(1, Math.floor(w / step)) }).map((_, i, arr) => (
+    <mesh key={i} position={[-w / 2 + (w / arr.length) * (i + 0.5), y0 + h / 2, z]} rotation={[0, -Math.PI / 2, 0]} castShadow>
+      <cylinderGeometry args={[step * 0.42, step * 0.42, h, 8, 1, false, 0, Math.PI]} />
+      <meshStandardMaterial color={c} roughness={0.55} />
+    </mesh>
+  ));
+const Glow = ({ p, s, c = '#ffd9a0', i = 2.2 }: { p: [number, number, number]; s: [number, number, number]; c?: string; i?: number }) => (
+  <mesh position={p}><boxGeometry args={s} /><meshStandardMaterial color={c} emissive={c} emissiveIntensity={i} toneMapped={false} /></mesh>
+);
+
+Object.assign(builders, {
+  tvWall: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      {/* fluted back panel */}
+      <B p={[0, h / 2, -d / 2 + 0.02]} s={[w, h, 0.03]} c={c} mat={mat} />
+      <group position={[0, 0, -d / 2 + 0.035]}>{flutes(w, h, 0, c)}</group>
+      {/* marble inset behind TV */}
+      <B p={[0, h * 0.55, -d / 2 + 0.045]} s={[w * 0.5, h * 0.55, 0.02]} c={a} rough={0.2} />
+      {/* floating console */}
+      <B p={[0, 0.45, 0]} s={[w * 0.9, 0.32, d - 0.05]} c="#2a2624" rough={0.5} />
+      <Glow p={[0, 0.28, 0]} s={[w * 0.88, 0.01, d - 0.08]} />
+      {/* TV + backlight */}
+      <B p={[0, h * 0.55, -d / 2 + 0.09]} s={[Math.min(1.65, w * 0.45), 0.95, 0.04]} c="#0d0d0f" rough={0.2} metal={0.3} />
+      <Glow p={[0, h - 0.05, -d / 2 + 0.06]} s={[w * 0.98, 0.02, 0.02]} i={3} />
+    </group>
+  ),
+  wardrobeSliding: ({ w, h, d, c, a, mat }: P) => {
+    const loft = Math.min(0.55, h * 0.2);
+    return (
+      <group>
+        <B p={[0, (h - loft) / 2, 0]} s={[w, h - loft, d]} c={c} mat={mat} />
+        <B p={[-w / 4, (h - loft) / 2, d / 2 + 0.01]} s={[w / 2 - 0.01, h - loft - 0.04, 0.02]} c={c} rough={0.35} mat={mat} />
+        <B p={[w / 4, (h - loft) / 2, d / 2 + 0.035]} s={[w / 2 - 0.01, h - loft - 0.04, 0.02]} c={c} rough={0.35} mat={mat} />
+        <B p={[w / 4, (h - loft) / 2, d / 2 + 0.047]} s={[0.25, h - loft - 0.3, 0.005]} c="#dfe9ee" metal={1} rough={0.05} />
+        <B p={[-0.02, (h - loft) / 2, d / 2 + 0.05]} s={[0.02, 0.9, 0.02]} c={a} metal={0.85} rough={0.3} />
+        <B p={[0, h - loft / 2, 0]} s={[w, loft - 0.02, d]} c={c} mat={mat} />
+        {[0, 1, 2].map((i) => <B key={i} p={[-w / 2 + (w / 3) * (i + 0.5), h - loft / 2, d / 2 + 0.006]} s={[w / 3 - 0.012, loft - 0.04, 0.01]} c={c} rough={0.4} mat={mat} />)}
+      </group>
+    );
+  },
+  kitchenRun: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      <B p={[0, 0.45, 0]} s={[w, 0.86, d - 0.02]} c={c} mat={mat} />
+      <B p={[0, 0.9, 0]} s={[w + 0.02, 0.04, d + 0.02]} c={a} rough={0.2} />
+      <B p={[0, 1.27, -d / 2 + 0.01]} s={[w, 0.7, 0.02]} c={a} rough={0.2} />{/* full-height backsplash */}
+      <B p={[0, h - 0.35, -d / 2 + 0.19]} s={[w, 0.7, 0.36]} c={c} mat={mat} />
+      <Glow p={[0, h - 0.71, -d / 2 + 0.3]} s={[w * 0.95, 0.01, 0.02]} c="#fff3dc" i={2} />
+      <B p={[-w * 0.2, 0.93, 0]} s={[0.6, 0.02, 0.5]} c="#111" rough={0.3} />{/* hob */}
+      <B p={[-w * 0.2, h - 0.85, -d / 2 + 0.25]} s={[0.7, 0.35, 0.45]} c="#bfc3c7" metal={0.8} rough={0.3} />{/* chimney */}
+      <B p={[w * 0.25, 0.9, 0.02]} s={[0.6, 0.03, 0.42]} c="#9aa1a6" metal={0.9} rough={0.2} />{/* sink */}
+      {Array.from({ length: Math.max(1, Math.round(w / 0.6)) }).map((_, i, arr) => (
+        <B key={i} p={[-w / 2 + (w / arr.length) * (i + 0.5), 0.45, d / 2 - 0.005]} s={[w / arr.length - 0.012, 0.8, 0.012]} c={c} rough={0.4} mat={mat} />
+      ))}
+    </group>
+  ),
+  kitchenL: (p: P) => {
+    const run = builders.kitchenRun as (q: P) => React.ReactNode;
+    const depth = 0.62;
+    return (
+      <group>
+        <group position={[0, 0, -p.d / 2 + depth / 2]}>{run({ ...p, d: depth })}</group>
+        <group position={[-p.w / 2 + depth / 2, 0, depth / 2]} rotation={[0, Math.PI / 2, 0]}>{run({ ...p, w: p.d - depth, d: depth })}</group>
+      </group>
+    );
+  },
+  floatingShelves: ({ w, h, d, c, mat }: P) => (
+    <group>{[0, 1, 2].map((i) => <B key={i} p={[i === 1 ? w * 0.1 : 0, (h / 2.5) * i + 0.02, 0]} s={[i === 1 ? w * 0.8 : w, 0.04, d]} c={c} mat={mat} />)}
+      <B p={[-w / 2 + 0.2, 0.12, 0]} s={[0.12, 0.18, 0.12]} c="#cfc6b8" /><B p={[w / 2 - 0.25, h / 2.5 + 0.13, 0]} s={[0.18, 0.2, 0.15]} c="#4f7a4a" />
+    </group>
+  ),
+  bookWall: ({ w, h, d, c, a, mat }: P) => {
+    const cols = Math.max(2, Math.round(w / 0.6)), rows = Math.max(3, Math.round(h / 0.45));
+    return (
+      <group>
+        <B p={[0, h / 2, -d / 2 + 0.01]} s={[w, h, 0.02]} c={c} mat={mat} />
+        {Array.from({ length: cols + 1 }).map((_, i) => <B key={'v' + i} p={[-w / 2 + (w / cols) * i, h / 2, 0]} s={[0.03, h, d]} c={c} mat={mat} />)}
+        {Array.from({ length: rows + 1 }).map((_, i) => <B key={'h' + i} p={[0, (h / rows) * i + 0.015, 0]} s={[w, 0.03, d]} c={c} mat={mat} />)}
+        {Array.from({ length: rows }).map((_, r) => <Glow key={'g' + r} p={[0, (h / rows) * (r + 1) - 0.01, d / 2 - 0.05]} s={[w - 0.04, 0.005, 0.01]} c={a} i={2.5} />)}
+      </group>
+    );
+  },
+  crockery: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      <B p={[0, 0.45, 0]} s={[w, 0.9, d]} c={c} mat={mat} />
+      <B p={[0, 0.92, 0]} s={[w + 0.02, 0.03, d + 0.02]} c="#ecebe8" rough={0.2} />
+      <B p={[0, 0.95 + (h - 0.95) / 2, -0.05]} s={[w, h - 0.95, d - 0.12]} c={c} mat={mat} />
+      <B p={[0, 0.95 + (h - 0.95) / 2, d / 2 - 0.1]} s={[w - 0.06, h - 1.0, 0.01]} c={a} opacity={0.35} rough={0.05} />
+      <Glow p={[0, h - 0.04, -0.05]} s={[w - 0.08, 0.01, 0.2]} />
+    </group>
+  ),
+  studyUnit: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      <B p={[0, 0.74, 0]} s={[w, 0.04, d]} c={c} mat={mat} />
+      <B p={[-w / 2 + 0.22, 0.36, 0]} s={[0.42, 0.72, d - 0.04]} c={a} />
+      <B p={[w / 2 - 0.02, 0.36, 0]} s={[0.04, 0.72, d - 0.04]} c={c} mat={mat} />
+      <B p={[0, h - 0.25, -d / 2 + 0.17]} s={[w, 0.5, 0.34]} c={a} />
+      <B p={[0, 1.2, -d / 2 + 0.12]} s={[w * 0.8, 0.03, 0.24]} c={c} mat={mat} />
+      <Glow p={[0, h - 0.51, -d / 2 + 0.25]} s={[w * 0.9, 0.01, 0.02]} c="#fff3dc" />
+    </group>
+  ),
+  dressing: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      <B p={[0, 0.38, 0]} s={[w, 0.76, d]} c={c} mat={mat} />
+      <B p={[0, 1.3, -d / 2 + 0.03]} s={[w * 0.7, h - 1.0, 0.03]} c="#dfe9ee" metal={1} rough={0.05} />
+      <Glow p={[0, h - 0.05, -d / 2 + 0.05]} s={[w * 0.7, 0.02, 0.02]} />
+      <B p={[0, 0.6, d / 2 + 0.01]} s={[w * 0.3, 0.015, 0.015]} c={a} metal={0.85} />
+    </group>
+  ),
+  jaali: ({ w, h, d, c, mat }: P) => {
+    const n = Math.max(4, Math.round(w / 0.15)), m = Math.max(8, Math.round(h / 0.15));
+    return (
+      <group>
+        <B p={[0, h / 2, 0]} s={[w, 0.06, d]} c={c} mat={mat} /><B p={[0, h - 0.03, 0]} s={[w, 0.06, d]} c={c} mat={mat} /><B p={[0, 0.03, 0]} s={[w, 0.06, d]} c={c} mat={mat} />
+        {Array.from({ length: n + 1 }).map((_, i) => <B key={'v' + i} p={[-w / 2 + (w / n) * i, h / 2, 0]} s={[0.025, h, d]} c={c} mat={mat} />)}
+        {Array.from({ length: m + 1 }).map((_, i) => <B key={'h' + i} p={[0, (h / m) * i, 0]} s={[w, 0.025, d]} c={c} mat={mat} />)}
+      </group>
+    );
+  },
+  glassPartition: ({ w, h, d, c, a }: P) => (
+    <group>
+      <B p={[0, h / 2, 0]} s={[w, h, d * 0.3]} c={a} opacity={0.45} rough={0.3} />
+      {[-w / 2, w / 2].map((x, i) => <B key={i} p={[x, h / 2, 0]} s={[0.03, h, d]} c={c} metal={0.7} rough={0.4} />)}
+      {[0.015, h - 0.015, h * 0.45].map((y, i) => <B key={'r' + i} p={[0, y, 0]} s={[w, 0.03, d]} c={c} metal={0.7} rough={0.4} />)}
+    </group>
+  ),
+  featurePanel: ({ w, h, d, c, mat }: P) => (
+    <group><B p={[0, h / 2, 0]} s={[w, h, d * 0.5]} c={c} mat={mat} /><group position={[0, 0, d * 0.25]}>{flutes(w, h, 0, c)}</group></group>
+  ),
+  curtains: ({ w, h, d, c, a, mat }: P) => (
+    <group>
+      <Cy p={[0, h - 0.06, 0]} r={0.012} h={w + 0.2} c={a} metal={0.8} />
+      {[-1, 1].map((sgn) => (
+        <group key={sgn} position={[sgn * w * 0.3, 0, 0]}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <mesh key={i} position={[(-0.5 + i / 5) * w * 0.32, (h - 0.1) / 2, (i % 2) * 0.04 - 0.02]} castShadow>
+              <cylinderGeometry args={[0.035, 0.045, h - 0.1, 10]} />
+              <Mat c={c} rough={1} mat={mat} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+      <B p={[0, h - 0.06, 0]} s={[0.001, 0.001, d]} c={c} />
+    </group>
+  ),
+  blind: ({ w, h, c }: P) => (
+    <group>
+      <Cy p={[0, h - 0.04, 0]} r={0.04} h={w} c={c} />
+      <B p={[0, h * 0.62, 0.02]} s={[w - 0.04, h * 0.72, 0.006]} c={c} rough={1} />
+    </group>
+  ),
+  chandelier: ({ w, h, c }: P) => (
+    <group>
+      <Cy p={[0, h * 0.8, 0]} r={0.005} h={h * 0.4} c="#111" />
+      {[0, 1].map((tier) => Array.from({ length: 8 - tier * 3 }).map((_, i, arr) => {
+        const ang = (i / arr.length) * Math.PI * 2, rad = (w / 2) * (1 - tier * 0.45);
+        return (
+          <group key={`${tier}-${i}`} position={[Math.cos(ang) * rad, h * (0.25 + tier * 0.2), Math.sin(ang) * rad]}>
+            <mesh><sphereGeometry args={[0.035, 10, 8]} /><meshStandardMaterial color="#fff3dc" emissive="#ffd9a0" emissiveIntensity={2.5} toneMapped={false} /></mesh>
+            <Cy p={[0, 0.06, 0]} r={0.008} h={0.1} c={c} metal={0.8} />
+          </group>
+        );
+      }))}
+      <mesh position={[0, h * 0.28, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[w / 2, 0.012, 8, 40]} /><meshStandardMaterial color={c} metalness={0.85} roughness={0.3} /></mesh>
+      <pointLight position={[0, h * 0.3, 0]} intensity={1.2} distance={6} color="#ffd9a0" />
+    </group>
+  ),
+});
+
 /** Product approximation from a reference photo: a dimensioned block with the photo on its front face. */
 function ImageProxy({ o }: { o: SceneObject }) {
   const tex = useMemo(() => {

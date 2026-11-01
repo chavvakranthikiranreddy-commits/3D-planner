@@ -123,6 +123,61 @@ function drawPattern(ctx: CanvasRenderingContext2D, size: number, pattern: strin
       }
       break;
     }
+    case 'fluted': {
+      const n = 12, w = size / n;
+      for (let i = 0; i < n; i++) {
+        const g = ctx.createLinearGradient(i * w, 0, (i + 1) * w, 0);
+        g.addColorStop(0, shade(hex, 0.72)); g.addColorStop(0.25, shade(hex, 1.05)); g.addColorStop(0.6, shade(hex, 1.1)); g.addColorStop(1, shade(hex, 0.78));
+        ctx.fillStyle = g; ctx.fillRect(i * w, 0, w, size);
+      }
+      break;
+    }
+    case 'wood-panel': {
+      const n = 8, w = size / n;
+      for (let i = 0; i < n; i++) {
+        ctx.fillStyle = shade(hex, 0.88 + r() * 0.22); ctx.fillRect(i * w + 3, 0, w - 6, size);
+        for (let g = 0; g < 6; g++) { ctx.strokeStyle = shade(hex, 0.75); ctx.globalAlpha = 0.3; ctx.lineWidth = 1; const x = i * w + 4 + r() * (w - 8); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 2, size); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(i * w, 0, 3, size);
+      }
+      break;
+    }
+    case 'wallpaper': {
+      const motif = shade(hex, 0.72), hi = shade(hex, 1.12);
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+        const cx = x * size / 4 + (y % 2 ? size / 8 : 0) + size / 8, cy = y * size / 4 + size / 8;
+        ctx.fillStyle = motif;
+        for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.ellipse(cx, cy, size / 22, size / 9, (k * Math.PI) / 4, 0, Math.PI * 2); ctx.fill(); }
+        ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(cx, cy, size / 40, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'stone-cladding': {
+      ctx.fillStyle = shade(hex, 0.55); ctx.fillRect(0, 0, size, size);
+      let y = 0;
+      while (y < size) {
+        const h = 22 + r() * 30; let x = -r() * 40;
+        while (x < size) { const w = 40 + r() * 70; ctx.fillStyle = shade(hex, 0.8 + r() * 0.4); ctx.fillRect(x + 2, y + 2, w - 4, h - 4); x += w; }
+        y += h;
+      }
+      break;
+    }
+    case 'brick': {
+      const bh = size / 8, bw = size / 4;
+      ctx.fillStyle = '#cfc6b8'; ctx.fillRect(0, 0, size, size);
+      for (let row = 0; row < 8; row++) for (let col = -1; col < 5; col++) {
+        const x = col * bw + (row % 2 ? bw / 2 : 0);
+        ctx.fillStyle = shade(hex, 0.8 + r() * 0.35); ctx.fillRect(x + 3, row * bh + 3, bw - 6, bh - 6);
+      }
+      break;
+    }
+    case 'texture-plaster': {
+      const img = ctx.getImageData(0, 0, size, size);
+      for (let i = 0; i < img.data.length; i += 4) { const n = (r() - 0.5) * 16; img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n; }
+      ctx.putImageData(img, 0, 0);
+      for (let i = 0; i < 160; i++) { ctx.strokeStyle = `rgba(255,255,255,${r() * 0.12})`; ctx.lineWidth = 2 + r() * 6; ctx.beginPath(); const x = r() * size, y = r() * size; ctx.arc(x, y, 8 + r() * 26, r() * 6, r() * 6 + 1.5); ctx.stroke(); }
+      break;
+    }
     case 'fabric': {
       for (let i = 0; i < size; i += 3) {
         ctx.fillStyle = `rgba(0,0,0,${0.04 + r() * 0.05})`;
@@ -163,6 +218,21 @@ export function getMaterialTexture(m: Material): THREE.Texture | null {
     cache.set(key, t);
   }
   return t;
+}
+
+/** Tileable pattern canvas for a material (used by the photo visualiser). */
+export function patternCanvas(m: Material, size = 256): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d')!;
+  if (m.textureDataUrl) {
+    const t = getMaterialTexture(m);
+    const img = t?.image as CanvasImageSource | undefined;
+    if (img) { try { ctx.drawImage(img, 0, 0, size, size); return c; } catch { /* fallthrough */ } }
+  }
+  if (m.pattern && m.pattern !== 'none') drawPattern(ctx, size, m.pattern, m.colorHex);
+  else { ctx.fillStyle = m.colorHex; ctx.fillRect(0, 0, size, size); }
+  return c;
 }
 
 /** Swatch image for the UI. */

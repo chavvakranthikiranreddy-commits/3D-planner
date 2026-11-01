@@ -222,6 +222,37 @@ export function applyAttachments(s: Scene, att: Attachments, to: Pt) {
   for (const { id, idx } of att.rooms) { const r = s.rooms.find((x) => x.id === id); if (r && r.polygon[idx]) r.polygon[idx] = { ...to }; }
 }
 
+// ---------- polygon offset (false-ceiling borders) ----------
+const signedArea = (poly: Pt[]) => poly.reduce((a, p, i) => { const q = poly[(i + 1) % poly.length]; return a + p.x * q.y - q.x * p.y; }, 0) / 2;
+
+/**
+ * Inset a simple polygon by distance d (miter joins). Works for convex and orthogonal concave rooms
+ * when d is smaller than half the shortest edge. Returns null if the inset collapses.
+ */
+export function insetPolygon(poly: Pt[], d: number): Pt[] | null {
+  const n = poly.length;
+  if (n < 3) return null;
+  const sgn = signedArea(poly) > 0 ? 1 : -1; // y-down plans: positive area = clockwise on screen
+  const lines = poly.map((p, i) => {
+    const q = poly[(i + 1) % n];
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1e-9;
+    const nx = (-(q.y - p.y) / len) * sgn, ny = ((q.x - p.x) / len) * sgn; // inward normal
+    return { p: { x: p.x + nx * d, y: p.y + ny * d }, dir: { x: (q.x - p.x) / len, y: (q.y - p.y) / len } };
+  });
+  const out: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = lines[(i - 1 + n) % n], b = lines[i];
+    const den = a.dir.x * b.dir.y - a.dir.y * b.dir.x;
+    if (Math.abs(den) < 1e-9) { out.push(b.p); continue; }
+    const t = ((b.p.x - a.p.x) * b.dir.y - (b.p.y - a.p.y) * b.dir.x) / den;
+    out.push({ x: a.p.x + a.dir.x * t, y: a.p.y + a.dir.y * t });
+  }
+  const area = Math.abs(signedArea(out));
+  if (area < 0.25 || Math.sign(signedArea(out)) !== Math.sign(signedArea(poly)) || area >= Math.abs(signedArea(poly))) return null;
+  if (!out.every((p) => pointInPolygon(p, poly))) return null;
+  return out;
+}
+
 // ---------- footprints ----------
 export function objectCorners(o: Pick<SceneObject, 'x' | 'y' | 'rotation' | 'dims'>, pad = 0): Pt[] {
   const hw = o.dims.w / 2 + pad, hd = o.dims.d / 2 + pad;
