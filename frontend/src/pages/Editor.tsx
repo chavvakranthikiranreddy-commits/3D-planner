@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import {
   ArrowLeft, Undo2, Redo2, MousePointer2, PenLine, Square, DoorOpen, AppWindow, Hand, Ruler, Magnet, Check, Loader2, AlertCircle,
-  SlidersHorizontal, Palette, MessageSquare, Camera, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
+  SlidersHorizontal, Palette, MessageSquare, Camera, Zap, SwatchBook, Sofa, ImagePlus, Sparkles, Sun, History, Share, PanelLeft, PanelRight, Keyboard, FileUp, Grid2x2, Box, Columns2, Footprints,
 } from 'lucide-react';
 import { useEditor, type RightTab, type Tool, type View } from '../store/editor';
 import Plan2D from '../components/Plan2D';
@@ -15,6 +15,8 @@ import LightingPanel from '../components/panels/LightingPanel';
 import VersionsPanel from '../components/panels/VersionsPanel';
 import ExportPanel from '../components/panels/ExportPanel';
 import ChatPanel from '../components/panels/ChatPanel';
+import ElectricalPanel from '../components/panels/ElectricalPanel';
+import StylePanel from '../components/panels/StylePanel';
 import { Btn, Modal } from '../components/ui';
 import { uid } from '../lib/templates';
 import { thumbnail } from '../lib/capture';
@@ -35,6 +37,7 @@ const VIEWS: { id: View; icon: typeof Grid2x2; label: string }[] = [
 const TABS: { id: RightTab; icon: typeof Palette; label: string }[] = [
   { id: 'chat', icon: MessageSquare, label: 'Design chat' },
   { id: 'properties', icon: SlidersHorizontal, label: 'Properties' }, { id: 'materials', icon: Palette, label: 'Materials & colour' },
+  { id: 'style', icon: SwatchBook, label: 'Room style & palettes' }, { id: 'electrical', icon: Zap, label: 'Electrical & lighting' },
   { id: 'catalog', icon: Sofa, label: 'Catalog' }, { id: 'product', icon: ImagePlus, label: 'Product image' },
   { id: 'ai', icon: Sparkles, label: 'AI assistant' }, { id: 'lighting', icon: Sun, label: 'Lighting' },
   { id: 'versions', icon: History, label: 'Versions' }, { id: 'export', icon: Share, label: 'Render & export' },
@@ -150,6 +153,7 @@ export default function Editor() {
         const sel = st.selection;
         mutate((s) => {
           if (sel.kind === 'object') s.objects = s.objects.filter((o) => o.id !== sel.id);
+          if (sel.kind === 'elec') s.electrical = (s.electrical ?? []).filter((o) => o.id !== sel.id);
           if (sel.kind === 'room') s.rooms = s.rooms.filter((o) => o.id !== sel.id);
           if (sel.kind === 'opening') s.openings = s.openings.filter((o) => o.id !== sel.id);
           if (sel.kind === 'wall') { s.walls = s.walls.filter((o) => o.id !== sel.id); s.openings = s.openings.filter((o) => o.wallId !== sel.id); }
@@ -189,7 +193,7 @@ export default function Editor() {
   const hasBp = !!project.scene.blueprints?.[activeFloorId];
 
   const panel = {
-    chat: <ChatPanel />, properties: <PropertiesPanel />, materials: <MaterialsPanel />, catalog: <CatalogPanel />, product: <ProductPanel />,
+    chat: <ChatPanel />, properties: <PropertiesPanel />, materials: <MaterialsPanel />, style: <StylePanel />, electrical: <ElectricalPanel />, catalog: <CatalogPanel />, product: <ProductPanel />,
     ai: <AIPanel />, lighting: <LightingPanel />, versions: <VersionsPanel />, export: <ExportPanel />,
   }[rightTab];
 

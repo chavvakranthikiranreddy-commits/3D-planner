@@ -1,14 +1,18 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, TransformControls, PointerLockControls, Sky, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEditor } from '../store/editor';
-import type { CeilingDesign, Material, Opening, Pt, Room, Scene, SceneObject, Wall } from '../lib/types';
+import type { CeilingDesign, ElecPoint, LightMode, Material, Opening, Pt, Room, Scene, SceneObject, Wall } from '../lib/types';
+import { ELEC } from '../lib/electrical';
+import { capturePanorama, nextFrames } from '../lib/panorama';
+import { centroid, polygonArea as polyArea } from '../lib/geometry';
 import { bbox, insetPolygon, normalizeOpening, projectOnSegment, segmentWall, spanBreaks, wallAngle, wallLength, wallMaterialAt } from '../lib/geometry';
 import { getMaterialTexture } from './textures';
 import { FurnitureModel } from './Furniture';
 import { getAsset } from '../lib/catalog';
-import { registerViewport } from '../lib/capture';
+import { registerViewport, getViewport } from '../lib/capture';
+const PanoramaViewer = lazy(() => import('../components/PanoramaViewer'));
 
 const SEL = '#f59e0b';
 
@@ -109,8 +113,10 @@ function WallMesh({ wall, openings, materials, elevation, selected, onSelect }: 
   );
 }
 
-function RoomMesh({ room, materials, elevation, ceilingHeight, showCeiling, selected, onSelect, lights }: {
+function RoomMesh({ room, materials, elevation, ceilingHeight, showCeiling, selected, onSelect, lights, lumens = 0, warmth = 0.7 }: {
   room: Room; materials: Scene['materials']; elevation: number; ceilingHeight: number; showCeiling: boolean; selected: boolean; onSelect: (e: ThreeEvent<MouseEvent>) => void; lights: boolean;
+  /** Total lumens of planned light fixtures in the room (0 = use a default ceiling light). */
+  lumens?: number; warmth?: number;
 }) {
   const geom = useMemo(() => {
     if (room.polygon.length < 3) return null;
@@ -141,7 +147,7 @@ function RoomMesh({ room, materials, elevation, ceilingHeight, showCeiling, sele
         <FalseCeiling room={room} design={room.ceiling} top={elevation + ceilingHeight} materials={materials} lightsOn={lights} />
       )}
       {lights && (
-        <pointLight position={[(b.minX + b.maxX) / 2, elevation + ceilingHeight - 0.3, (b.minY + b.maxY) / 2]} intensity={1.2} distance={Math.max(6, (b.maxX - b.minX) * 1.6)} decay={1.6} color="#ffe2bd" />
+        <pointLight position={[(b.minX + b.maxX) / 2, elevation + ceilingHeight - 0.3, (b.minY + b.maxY) / 2]} intensity={lumens ? Math.max(0.5, Math.min(4.5, lumens / 1600)) : 1.2} distance={Math.max(6, Math.max(b.maxX - b.minX, b.maxY - b.minY) * 1.8)} decay={1.6} color={warmColor(0.25 + warmth * 0.75)} />
       )}
     </group>
   );
@@ -465,6 +471,62 @@ function pointInRoomPoly(p: { x: number; y: number }, poly: { x: number; y: numb
   return inside;
 }
 
+/** Visible fittings for planned electrical points (plates, lights, fans, AC units). Lit ones glow when lights are on. */
+function ElecFixture({ e, elevation, top, lightsOn, warm }: { e: ElecPoint; elevation: number; top: number; lightsOn: boolean; warm: THREE.Color }) {
+  const m = ELEC[e.kind];
+  const glow = lightsOn ? warm : new THREE.Color('#000');
+  if (m.mount === 'ceiling') {
+    const y = top;
+    if (e.kind === 'fan') return (
+      <group position={[e.x, y, e.y]}>
+        <mesh position={[0, -0.15, 0]}><cylinderGeometry args={[0.012, 0.012, 0.3, 8]} /><meshStandardMaterial color="#cfcac2" /></mesh>
+        <mesh position={[0, -0.33, 0]}><cylinderGeometry args={[0.09, 0.11, 0.08, 20]} /><meshStandardMaterial color="#e9e5df" roughness={0.4} /></mesh>
+        {[0, 1, 2].map((i) => <mesh key={i} position={[Math.cos((i * 2 * Math.PI) / 3) * 0.42, -0.34, Math.sin((i * 2 * Math.PI) / 3) * 0.42]} rotation={[0, -(i * 2 * Math.PI) / 3, 0]}><boxGeometry args={[0.62, 0.008, 0.11]} /><meshStandardMaterial color="#d9d3ca" roughness={0.5} /></mesh>)}
+      </group>
+    );
+    if (e.kind === 'pendant') return (
+      <group position={[e.x, y, e.y]}>
+        <mesh position={[0, -0.35, 0]}><cylinderGeometry args={[0.004, 0.004, 0.7, 6]} /><meshStandardMaterial color="#222" /></mesh>
+        <mesh position={[0, -0.78, 0]}><coneGeometry args={[0.2, 0.2, 24, 1, true]} /><meshStandardMaterial color="#2a2a2a" side={THREE.DoubleSide} metalness={0.5} roughness={0.4} /></mesh>
+        <mesh position={[0, -0.84, 0]}><sphereGeometry args={[0.05, 12, 12]} /><meshStandardMaterial color="#fff" emissive={glow} emissiveIntensity={lightsOn ? 4 : 0} /></mesh>
+      </group>
+    );
+    const r = e.kind === 'downlight' ? 0.06 : 0.22;
+    return (
+      <mesh position={[e.x, y - 0.006, e.y]} rotation={[Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[r, 24]} />
+        <meshStandardMaterial color="#f4f2ee" emissive={glow} emissiveIntensity={lightsOn ? (e.kind === 'downlight' ? 5 : 2.5) : 0} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
+  // wall-mounted: plate facing into the room
+  const rotY = -(e.facing ?? 0) + Math.PI / 2;
+  const y = elevation + e.height;
+  let body: React.ReactNode;
+  switch (e.kind) {
+    case 'ac': body = <><mesh position={[0, 0, 0.11]}><boxGeometry args={[0.9, 0.3, 0.22]} /><meshStandardMaterial color="#f5f5f3" roughness={0.35} /></mesh><mesh position={[0, -0.1, 0.222]}><boxGeometry args={[0.8, 0.03, 0.005]} /><meshStandardMaterial color="#bbb" /></mesh></>; break;
+    case 'geyser': body = <mesh position={[0, 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.18, 0.18, 0.4, 24]} /><meshStandardMaterial color="#f2f2f0" roughness={0.3} /></mesh>; break;
+    case 'exhaust': body = <mesh position={[0, 0, 0.02]}><boxGeometry args={[0.25, 0.25, 0.04]} /><meshStandardMaterial color="#e6e6e6" /></mesh>; break;
+    case 'wall-light': body = <mesh position={[0, 0, 0.05]}><boxGeometry args={[0.3, 0.06, 0.08]} /><meshStandardMaterial color="#c9a25b" emissive={glow} emissiveIntensity={lightsOn ? 3 : 0} metalness={0.6} roughness={0.35} /></mesh>; break;
+    case 'strip': body = <mesh position={[0, 0, 0.01]}><boxGeometry args={[1.2, 0.012, 0.012]} /><meshStandardMaterial color="#fff" emissive={glow} emissiveIntensity={lightsOn ? 4 : 0} /></mesh>; break;
+    case 'cctv': body = <mesh position={[0, 0, 0.06]}><sphereGeometry args={[0.06, 12, 12]} /><meshStandardMaterial color="#e8e8e8" /></mesh>; break;
+    default: {
+      const g = e.gang ?? (e.kind === 'switchboard' ? 8 : 2);
+      const w = e.kind === 'switchboard' || e.kind === 'db' ? Math.max(0.12, g * 0.03) : 0.08 + Math.max(0, g - 2) * 0.03;
+      body = <mesh position={[0, 0, 0.006]}><boxGeometry args={[e.kind === 'db' ? 0.35 : w, e.kind === 'db' ? 0.45 : 0.1, 0.012]} /><meshStandardMaterial color={e.kind === 'db' ? '#d6d3cd' : '#fafaf8'} roughness={0.3} /></mesh>;
+    }
+  }
+  return <group position={[e.x, y, e.y]} rotation={[0, rotY, 0]}>{body}</group>;
+}
+
+/** Effective lighting for the chosen mode. */
+function modeLighting(L: Scene['lighting']) {
+  const mode: LightMode = L.mode ?? 'day';
+  if (mode === 'evening') return { mode, sun: L.sunIntensity * 0.22, sunEl: Math.min(L.sunElevation, 5), sunAz: L.sunAzimuth, ambient: L.ambient * 0.35, warmth: Math.max(0.85, L.warmth), lights: true };
+  if (mode === 'night') return { mode, sun: 0, sunEl: -10, sunAz: L.sunAzimuth, ambient: 0.05, warmth: 0.3, lights: true };
+  return { mode, sun: L.sunIntensity, sunEl: L.sunElevation, sunAz: L.sunAzimuth, ambient: L.ambient, warmth: L.warmth, lights: false };
+}
+
 function SceneContent({ walk, gizmoMode, showCeilings }: { walk: boolean; gizmoMode: 'translate' | 'rotate'; showCeilings: boolean }) {
   const scene = useEditor((s) => s.project?.scene)!;
   const selection = useEditor((s) => s.selection);
@@ -473,25 +535,29 @@ function SceneContent({ walk, gizmoMode, showCeilings }: { walk: boolean; gizmoM
   const activeLevel = scene.floors.find((f) => f.id === activeFloorId)?.level ?? 0;
   const floors = scene.floors.filter((f) => f.level <= activeLevel);
   const L = scene.lighting;
-  const az = (L.sunAzimuth * Math.PI) / 180, el = (L.sunElevation * Math.PI) / 180;
+  const ML = modeLighting(L);
+  const showElectrical = useEditor((s) => s.showElectrical);
+  const az = (ML.sunAz * Math.PI) / 180, el = (Math.max(ML.sunEl, 1) * Math.PI) / 180;
   const pts = scene.walls.flatMap((w) => [w.a, w.b]);
   const b = bbox(pts);
   const cx = (b.minX + b.maxX) / 2, cz = (b.minY + b.maxY) / 2;
   const span = Math.max(b.maxX - b.minX, b.maxY - b.minY, 8);
   const sunPos: [number, number, number] = [cx + Math.cos(az) * Math.cos(el) * span * 1.5, Math.sin(el) * span * 1.5, cz + Math.sin(az) * Math.cos(el) * span * 1.5];
-  const warm = new THREE.Color('#bcd4ff').lerp(new THREE.Color('#ffd7a3'), L.warmth);
+  const warm = new THREE.Color('#bcd4ff').lerp(new THREE.Color('#ffd7a3'), ML.warmth);
+  const lightsOn = ML.lights || (L.roomLights && (walk || L.sunElevation < 12));
+  const fixtureWarm = warmColor(0.75);
   const activeElev = scene.floors.find((f) => f.id === activeFloorId)?.elevation ?? 0;
   const stop = (fn: () => void) => (e: ThreeEvent<MouseEvent>) => { if (walk) return; e.stopPropagation(); fn(); };
 
   return (
     <>
       <Registrar />
-      <Sky sunPosition={sunPos} turbidity={6} rayleigh={1.2} mieCoefficient={0.004} />
-      <hemisphereLight args={[warm, '#8a8172', L.ambient]} />
-      <ambientLight intensity={L.ambient * 0.35} color={warm} />
+      {ML.mode === 'night' ? <color attach="background" args={['#0b1020']} /> : <Sky sunPosition={sunPos} turbidity={ML.mode === 'evening' ? 10 : 6} rayleigh={ML.mode === 'evening' ? 3 : 1.2} mieCoefficient={0.004} />}
+      <hemisphereLight args={[ML.mode === 'night' ? '#3a4a7a' : warm, '#8a8172', ML.ambient]} />
+      <ambientLight intensity={ML.ambient * 0.35} color={warm} />
       <directionalLight
         position={sunPos}
-        intensity={L.sunIntensity}
+        intensity={ML.sun}
         color={warm}
         castShadow
         shadow-mapSize={typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4 ? [1024, 1024] : [2048, 2048]}
@@ -513,13 +579,20 @@ function SceneContent({ walk, gizmoMode, showCeilings }: { walk: boolean; gizmoM
           {f.level > 0 && scene.rooms.filter((r) => r.floorId === f.id).length === 0 && null}
           {scene.rooms.filter((r) => r.floorId === f.id).map((r) => (
             <RoomMesh key={r.id} room={r} materials={scene.materials} elevation={f.elevation} ceilingHeight={f.ceilingHeight}
-              showCeiling={walk || showCeilings || f.level < activeLevel} lights={L.roomLights && (walk || L.sunElevation < 12)}
+              showCeiling={walk || showCeilings || f.level < activeLevel} lights={lightsOn}
+              lumens={(scene.electrical ?? []).filter((e) => e.floorId === f.id && ELEC[e.kind].light && pointInRoomPoly(e, r.polygon)).reduce((a, e) => a + ELEC[e.kind].light!.lumens, 0)}
+              warmth={r.ceiling?.lightWarmth ?? 0.7}
               selected={selection?.kind === 'room' && selection.id === r.id} onSelect={stop(() => select({ kind: 'room', id: r.id }))} />
           ))}
           {scene.walls.filter((w) => w.floorId === f.id).map((w) => (
             <WallMesh key={w.id} wall={w} openings={scene.openings} materials={scene.materials} elevation={f.elevation}
               selected={selection?.kind === 'wall' && selection.id === w.id} onSelect={stop(() => select({ kind: 'wall', id: w.id }))} />
           ))}
+          {showElectrical && (scene.electrical ?? []).filter((e) => e.floorId === f.id).map((e) => {
+            const room = scene.rooms.find((r) => r.floorId === f.id && pointInRoomPoly(e, r.polygon));
+            const drop = room?.ceiling && room.ceiling.type !== 'none' ? room.ceiling.drop : 0;
+            return <ElecFixture key={e.id} e={e} elevation={f.elevation} top={f.elevation + f.ceilingHeight - (ELEC[e.kind].kind === 'downlight' ? drop : 0)} lightsOn={lightsOn} warm={fixtureWarm} />;
+          })}
           {scene.objects.filter((o) => o.floorId === f.id).map((o) => (
             <ObjectMesh key={o.id} o={o} elevation={f.elevation} materials={scene.materials}
               selected={selection?.kind === 'object' && selection.id === o.id} onSelect={stop(() => select({ kind: 'object', id: o.id }))} />
@@ -549,7 +622,53 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
   const [showCeilings, setShowCeilings] = useState(true);
   const selection = useEditor((s) => s.selection);
   const setCamPreset = useEditor((s) => s.setCamPreset);
+  const mode = useEditor((s) => s.project?.scene.lighting.mode ?? 'day');
+  const [pano, setPano] = useState<{ url: string; name: string } | null>(null);
+  const [panoBusy, setPanoBusy] = useState(false);
   const ok = useMemo(webglAvailable, []);
+  const setMode = (m: LightMode) => useEditor.getState().mutate((s) => { s.lighting = { ...s.lighting, mode: m }; }, 'light:mode');
+
+  const takePanorama = async (roomId?: string) => {
+    const st = useEditor.getState();
+    const sc = st.project!.scene;
+    const vp = getViewport();
+    if (!vp) return;
+    setPanoBusy(true);
+    try {
+      let pos: THREE.Vector3, fwd: THREE.Vector3, name: string;
+      if (walk && !roomId) {
+        pos = vp.camera.position.clone();
+        fwd = vp.camera.getWorldDirection(new THREE.Vector3());
+        const here = sc.rooms.find((r) => r.floorId === st.activeFloorId && pointInRoomPoly({ x: pos.x, y: pos.z }, r.polygon));
+        name = here?.name ?? 'walkthrough';
+      } else {
+        const floorRooms = sc.rooms.filter((r) => r.floorId === st.activeFloorId);
+        const room = sc.rooms.find((r) => r.id === roomId) ?? (st.selection?.kind === 'room' ? sc.rooms.find((r) => r.id === st.selection!.id) : undefined)
+          ?? [...floorRooms].sort((a, b) => Math.abs(polyArea(b.polygon)) - Math.abs(polyArea(a.polygon)))[0];
+        if (!room) { st.toast('Add a room first.', 'info'); return; }
+        const f = sc.floors.find((x) => x.id === room.floorId)!;
+        const c = centroid(room.polygon), b = bbox(room.polygon);
+        pos = new THREE.Vector3(c.x, f.elevation + 1.5, c.y);
+        fwd = b.maxX - b.minX > b.maxY - b.minY ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, -1);
+        name = room.name;
+        if (!showCeilings) setShowCeilings(true);
+      }
+      st.select(null);
+      await nextFrames(3);
+      setPano({ url: capturePanorama({ position: pos, forward: fwd, width: 4096 }), name });
+    } catch (e) { st.toast((e as Error).message, 'error'); } finally { setPanoBusy(false); }
+  };
+  useEffect(() => {
+    const on = (ev: Event) => void takePanorama((ev as CustomEvent<string | undefined>).detail);
+    window.addEventListener('archiform:pano', on);
+    return () => window.removeEventListener('archiform:pano', on);
+  });
+  const modeBar = (
+    <div className="flex overflow-hidden rounded-md bg-stone-900/80 text-xs backdrop-blur" role="group" aria-label="Lighting mode">
+      {(['day', 'evening', 'night'] as const).map((m) => <button key={m} onClick={() => setMode(m)} title={`${m[0].toUpperCase() + m.slice(1)} lighting`} className={`px-2.5 py-1 capitalize ${mode === m ? 'bg-amber-500 text-stone-950' : 'text-stone-200 hover:bg-stone-800'}`}>{m}</button>)}
+    </div>
+  );
+  const panoBtn = <button onClick={() => void takePanorama()} disabled={panoBusy} className="rounded-md bg-stone-900/80 px-2.5 py-1 text-xs text-stone-200 backdrop-blur hover:bg-stone-800 disabled:opacity-50" title={walk ? 'Capture a 360° panorama from where you stand' : 'Capture a 360° panorama from the middle of the selected (or largest) room'}>{panoBusy ? 'Capturing…' : '360°'}</button>;
   if (!ok) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-stone-300">
@@ -574,6 +693,7 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
             <span className="hidden sm:inline">Click the view to look around · W A S D to walk · Shift to run · Esc to release the mouse</span>
             <span className="sm:hidden">Drag to look around · use the arrows to walk</span>
           </div>
+          <div className="absolute right-3 top-14 flex gap-1 sm:top-3">{modeBar}{panoBtn}</div>
           <div className="absolute bottom-4 left-4 grid grid-cols-3 gap-1" aria-label="Walk controls">
             {([['', ''], ['ArrowUp', '▲'], ['', ''], ['ArrowLeft', '◀'], ['ArrowDown', '▼'], ['ArrowRight', '▶']] as const).map(([code, label], i) => code ? (
               <button key={i} aria-label={`Walk ${code.replace('Arrow', '').toLowerCase()}`} className="h-12 w-12 touch-none rounded-lg bg-black/60 text-lg text-white active:bg-amber-500"
@@ -585,6 +705,8 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
       ) : (
         <div className="absolute left-3 top-3 flex gap-1">
           <button onClick={() => setShowCeilings(!showCeilings)} className={`rounded-md px-2.5 py-1 text-xs backdrop-blur ${showCeilings ? 'bg-amber-500 text-stone-950' : 'bg-stone-900/80 text-stone-200 hover:bg-stone-800'}`} title="Show ceilings & false ceilings (visible from inside rooms)">Ceilings</button>
+          {modeBar}
+          {panoBtn}
           {(['perspective', 'dollhouse', 'top', 'front'] as const).map((p) => (
             <button key={p} onClick={() => setCamPreset(p)} className="rounded-md bg-stone-900/80 px-2.5 py-1 text-xs capitalize text-stone-200 backdrop-blur hover:bg-stone-800" title={`Camera: ${p}`}>{p}</button>
           ))}
@@ -597,6 +719,7 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
           )}
         </div>
       )}
+      {pano && <Suspense fallback={null}><PanoramaViewer url={pano.url} name={pano.name} onClose={() => setPano(null)} /></Suspense>}
     </div>
   );
 }

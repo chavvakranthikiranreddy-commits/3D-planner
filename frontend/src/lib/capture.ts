@@ -5,6 +5,7 @@ type Ctx = { gl: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.Camera }
 let ctx: Ctx | null = null;
 export const registerViewport = (c: Ctx | null) => { ctx = c; };
 export const hasViewport = () => !!ctx;
+export const getViewport = () => ctx;
 
 /** Largest square the GPU can render off-screen; exports are clamped to it. */
 export function maxExportSide(): number {

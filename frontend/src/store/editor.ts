@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { produce, setAutoFreeze } from 'immer';
-import type { Job, Project, Scene, Selection } from '../lib/types';
+import type { ElecKind, Job, Project, Scene, Selection } from '../lib/types';
 import { saveProject, loadProject, type Settings, DEFAULT_SETTINGS, saveSettings } from '../lib/db';
 import { uid } from '../lib/templates';
 import { normalizeSceneOpenings } from '../lib/geometry';
@@ -8,9 +8,9 @@ import type { ChatMsg } from '../components/panels/ChatPanel';
 
 setAutoFreeze(false);
 
-export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'pan' | 'calibrate';
+export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'pan' | 'calibrate' | 'electric';
 export type View = '2d' | '3d' | 'split' | 'walk';
-export type RightTab = 'chat' | 'properties' | 'materials' | 'catalog' | 'product' | 'ai' | 'lighting' | 'versions' | 'export';
+export type RightTab = 'chat' | 'properties' | 'materials' | 'style' | 'electrical' | 'catalog' | 'product' | 'ai' | 'lighting' | 'versions' | 'export';
 export type SaveState = 'saved' | 'saving' | 'unsaved' | 'error';
 export type MaterialTarget = 'floor' | 'room-walls' | 'ceiling';
 export type Route = { page: 'dashboard' } | { page: 'editor'; id: string } | { page: 'settings' } | { page: 'import'; id: string } | { page: 'photos'; id: string };
@@ -41,6 +41,9 @@ interface State {
   toasts: Toast[];
   lastCoalesce: { key: string; t: number } | null;
   showGuide: boolean;
+  showElectrical: boolean;
+  elecKind: ElecKind;
+  setElecKind: (k: ElecKind) => void;
 
   navigate: (r: Route) => void;
   setSettings: (s: Partial<Settings>) => void;
@@ -56,7 +59,7 @@ interface State {
   setCamPreset: (n: State['camPreset']['name']) => void;
   setRightTab: (t: RightTab, target?: MaterialTarget) => void;
   setActiveFloor: (id: string) => void;
-  toggle: (k: 'showBlueprint' | 'gridSnap' | 'showGuide') => void;
+  toggle: (k: 'showBlueprint' | 'gridSnap' | 'showGuide' | 'showElectrical') => void;
   addJob: (j: Omit<Job, 'id' | 'createdAt' | 'status' | 'progress'> & Partial<Job>) => string;
   updateJob: (id: string, patch: Partial<Job>) => void;
   removeJob: (id: string) => void;
@@ -121,6 +124,9 @@ export const useEditor = create<State>((set, get) => {
     toasts: [],
     lastCoalesce: null,
     showGuide: true,
+    showElectrical: true,
+    elecKind: 'switchboard',
+    setElecKind: (k) => set({ elecKind: k, tool: 'electric', showElectrical: true }),
 
     navigate: (route) => {
       void get().flushSave();
@@ -180,7 +186,7 @@ export const useEditor = create<State>((set, get) => {
     },
     select: (selection) => {
       set({ selection });
-      if (selection && !['materials', 'chat'].includes(get().rightTab)) set({ rightTab: 'properties' });
+      if (selection && !['materials', 'chat', 'electrical', 'style'].includes(get().rightTab)) set({ rightTab: 'properties' });
     },
     setTool: (tool) => set({ tool, selection: tool === 'select' ? get().selection : null }),
     setView: (view) => set({ view }),

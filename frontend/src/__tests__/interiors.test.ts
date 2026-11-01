@@ -110,3 +110,14 @@ describe('false ceilings', () => {
     expect(s.rooms.find((r) => r.id === hall.id)!.ceiling?.type).toBe('cove-tray');
   });
 });
+
+import { newProject } from '../lib/templates';
+import { parseFeetInches } from '../lib/geometry';
+describe('new project dialog values', () => {
+  it('accepts more than 5 floors and ceilings in feet', () => {
+    const p = newProject('x', { floors: 7, ceilingHeight: (parseFeetInches(`10' 6"`)! * 0.3048), units: 'ft' });
+    expect(p.scene.floors).toHaveLength(7);
+    expect(p.scene.floors[0].ceilingHeight).toBeCloseTo(3.2, 2);
+    expect(parseFeetInches('8')).toBe(8);
+  });
+});

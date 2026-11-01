@@ -116,6 +116,8 @@ export interface SceneObject {
   /** Product approximations from a reference image are always flagged. */
   estimated?: boolean;
   imageDataUrl?: string;
+  /** Modular kitchen / wardrobe layout (units, finishes) — drives the 3D model, cost and cut list. */
+  modular?: ModularConfig;
   price?: number;
   brand?: string;
   source: Source;
@@ -128,6 +130,50 @@ export interface Lighting {
   ambient: number;
   warmth: number; // 0 cool .. 1 warm
   roomLights: boolean;
+  /** Day = sun & sliders; evening = low warm sun + lights; night = artificial light only. */
+  mode?: LightMode;
+}
+export type LightMode = 'day' | 'evening' | 'night';
+
+/** Electrical & lighting point on the plan (symbol). Wall points face into the room. */
+export type ElecKind =
+  | 'switchboard' | 'socket' | 'power-socket' | 'tv-point' | 'data' | 'ac' | 'geyser' | 'exhaust'
+  | 'fan' | 'light' | 'downlight' | 'pendant' | 'wall-light' | 'strip' | 'db' | 'bell' | 'cctv';
+export interface ElecPoint {
+  id: string;
+  floorId: string;
+  kind: ElecKind;
+  x: number;
+  y: number;
+  /** Mounting height above floor (m); ceiling points use the ceiling height. */
+  height: number;
+  /** Plan direction the plate faces (radians); wall points only. */
+  facing?: number;
+  /** Number of modules / gang count for switchboards and sockets. */
+  gang?: number;
+  note?: string;
+  source: Source;
+}
+
+export type ModUnitType = 'drawers' | 'shutter' | 'open' | 'tall' | 'sink' | 'hob' | 'corner' | 'appliance' | 'hanging' | 'shelves' | 'mirror';
+export interface ModUnit { id: string; type: ModUnitType; width: number; drawers?: number }
+export interface ModularConfig {
+  kind: 'kitchen' | 'wardrobe';
+  units: ModUnit[];
+  /** Second leg of an L-shaped kitchen. */
+  units2?: ModUnit[];
+  shutter: 'laminate' | 'acrylic' | 'pu' | 'veneer' | 'glass';
+  carcass: 'bwp-ply' | 'mr-ply' | 'hdhmr' | 'particle';
+  handle: 'profile' | 'gola' | 'knob' | 'bar' | 'push';
+  shutterHex: string;
+  /** Second shutter colour (wall units / alternate) — two-tone look. */
+  upperHex?: string;
+  counter?: 'granite' | 'quartz' | 'marble' | 'solid-surface';
+  counterHex?: string;
+  loft: boolean;
+  wallUnits: boolean;
+  /** Show the interior (doors removed) in 3D. */
+  open?: boolean;
 }
 
 export interface Scene {
@@ -139,6 +185,8 @@ export interface Scene {
   objects: SceneObject[];
   materials: Record<string, Material>;
   lighting: Lighting;
+  /** Electrical & lighting layout (switchboards, sockets, light points…). */
+  electrical?: ElecPoint[];
   /** Blueprint underlay per floor. The image itself lives in Project.assets so undo/versions stay cheap. */
   blueprints?: Record<string, BlueprintRef>;
 }
@@ -225,6 +273,7 @@ export type Selection =
   | { kind: 'room'; id: string }
   | { kind: 'object'; id: string }
   | { kind: 'opening'; id: string }
+  | { kind: 'elec'; id: string }
   | null;
 
 export type Surface = 'wall' | 'floor' | 'ceiling' | 'object';

@@ -5,7 +5,7 @@ import { deleteProject, listProjects, loadProject, loadRaw, saveProject, type Pr
 import { downloadText } from '../lib/capture';
 import { newProject, sampleProject, uid } from '../lib/templates';
 import { parseProjectFile } from '../lib/migrate';
-import { Btn, Confirm, Field, Modal, TextInput, inputCls } from '../components/ui';
+import { Btn, Confirm, Field, LenField, Modal, NumField, TextInput, inputCls } from '../components/ui';
 import type { Project } from '../lib/types';
 
 function NewProjectModal({ onClose, onCreate, mode }: { onClose: () => void; onCreate: (p: Project, then: 'import' | 'photos' | 'editor') => void; mode: 'blank' | 'import' | 'photos' }) {
@@ -31,8 +31,8 @@ function NewProjectModal({ onClose, onCreate, mode }: { onClose: () => void; onC
               <option value="m">Metric (m)</option><option value="ft">Imperial (ft-in)</option>
             </select>
           </Field>
-          <Field label="Floors"><input type="number" min={1} max={5} value={floors} onChange={(e) => setFloors(Math.max(1, Math.min(5, +e.target.value)))} className={inputCls} /></Field>
-          <Field label="Ceiling height (m)"><input type="number" min={2.2} max={6} step={0.05} value={ceiling} onChange={(e) => setCeiling(+e.target.value)} className={inputCls} /></Field>
+          <Field label="Floors" hint="Ground + upper floors, 1–30"><NumField value={floors} step={1} min={1} max={30} onCommit={(v) => setFloors(Math.round(v))} /></Field>
+          <Field label={`Ceiling height (${units === 'ft' ? 'ft-in' : 'm'})`} hint={units === 'ft' ? `e.g. 10' or 10' 6"` : 'e.g. 3.05'}><LenField meters={ceiling} units={units} min={2.2} max={9} onCommit={setCeiling} /></Field>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Btn variant="outline" onClick={onClose}>Cancel</Btn>

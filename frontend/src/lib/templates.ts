@@ -21,7 +21,7 @@ export function emptyScene(ceilingHeight = 3): Scene {
 
 export function newProject(name: string, opts: Partial<Pick<Project, 'units' | 'projectType' | 'currency'>> & { floors?: number; ceilingHeight?: number } = {}): Project {
   const scene = emptyScene(opts.ceilingHeight ?? 3);
-  const floors = Math.max(1, Math.min(5, opts.floors ?? 1));
+  const floors = Math.max(1, Math.min(30, Math.round(opts.floors ?? 1)));
   for (let i = 1; i < floors; i++) {
     scene.floors.push({ id: uid(), name: `Floor ${i}`, level: i, elevation: i * (scene.floors[0].ceilingHeight + 0.2), ceilingHeight: scene.floors[0].ceilingHeight });
   }

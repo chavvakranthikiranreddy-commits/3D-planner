@@ -63,7 +63,7 @@ export function NumField({ value, onCommit, step = 0.01, min, max, suffix, class
   return (
     <div className={`relative ${className}`}>
       <input type="number" step={step} value={txt} onChange={(e) => setTxt(e.target.value)} onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} className={`${inputCls} pr-8`} />
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }} className={`${inputCls} pr-8`} />
       {suffix && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-stone-500">{suffix}</span>}
     </div>
   );
@@ -94,7 +94,7 @@ function FeetField({ meters, onCommit, min, max }: { meters: number; onCommit: (
     setTxt(fmtLen(m, 'ft'));
   };
   return (
-    <input value={txt} onChange={(e) => setTxt(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+    <input value={txt} onChange={(e) => setTxt(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
       aria-invalid={bad} title={`Feet and inches, e.g. 10' 6". Range ${fmtLen(min, 'ft')}${max !== undefined ? ` – ${fmtLen(max, 'ft')}` : ''}`}
       className={`${inputCls} ${bad ? 'border-red-500' : ''}`} />
   );

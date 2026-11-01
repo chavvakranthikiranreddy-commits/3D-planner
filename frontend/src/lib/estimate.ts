@@ -2,13 +2,17 @@ import type { Project, Room, Scene } from './types';
 import { polygonArea, wallLength, wallMaterialAt } from './geometry';
 import { roomWallSides } from './placement';
 import { CEILING_TYPES, SQFT_PER_M2 } from './interiors';
+import { ELEC, ELEC_KINDS } from './electrical';
+
+/** Indicative 2026 rates per point: concealed wiring + modular plate/accessory (+ fitting for lights and fans). */
+export const ELEC_RATES: Record<string, number> = { switchboard: 1800, socket: 900, 'power-socket': 1400, 'tv-point': 1500, data: 1200, ac: 2500, geyser: 1800, exhaust: 2200, fan: 3800, light: 1900, downlight: 1350, pendant: 4200, 'wall-light': 1800, strip: 1500, db: 9500, bell: 1200, cctv: 1500 };
 
 /**
  * Indicative quantities & costs. Every line records its source and confidence (spec: EstimateLine).
  * Catalog rates are placeholder values in the project's currency symbol; changing the symbol does not convert them.
  */
 export interface EstimateLine {
-  roomId?: string; item: string; itemType: 'flooring' | 'paint' | 'ceiling' | 'product';
+  roomId?: string; item: string; itemType: 'flooring' | 'paint' | 'ceiling' | 'electrical' | 'product';
   quantity: number; unit: string; unitPrice: number; total: number;
   source: string; confidence: 'measured' | 'estimated';
 }
@@ -72,6 +76,11 @@ export function buildEstimate(p: Project): EstimateLine[] {
         ? { roomId: r.id, item: `${r.name} — ${wm?.name ?? 'Wall paint'} (${COATS} coats, ${wa.toFixed(1)} m²)`, itemType: 'paint', quantity: +((wa * COATS) / PAINT_COVERAGE_M2_PER_L).toFixed(1), unit: 'L', unitPrice: (rate * PAINT_COVERAGE_M2_PER_L) / COATS, total: wa * rate, source: 'Wall faces × ceiling height − openings', confidence: 'estimated' }
         : { roomId: r.id, item: `${r.name} — ${wm.name} wall finish`, itemType: 'paint', quantity: +wa.toFixed(2), unit: 'm²', unitPrice: rate, total: wa * rate, source: 'Wall faces × ceiling height − openings', confidence: 'estimated' });
     }
+  }
+  // electrical & lighting points
+  for (const k of ELEC_KINDS) {
+    const n = (s.electrical ?? []).filter((e) => e.kind === k).length;
+    if (n) lines.push({ item: `Electrical — ${ELEC[k].label}`, itemType: 'electrical', quantity: n, unit: 'points', unitPrice: ELEC_RATES[k] ?? 1000, total: n * (ELEC_RATES[k] ?? 1000), source: 'Planned points × indicative wiring + fitting rate', confidence: 'estimated' });
   }
   // group identical products only when price, brand and verification status also match (audit A20)
   const groups = new Map<string, { name: string; qty: number; price: number; estimated: boolean; dims: string; brand?: string }>();

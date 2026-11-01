@@ -53,6 +53,7 @@ export default function ExportPanel() {
   const project = useEditor((s) => s.project)!;
   const jobs = useEditor((s) => s.jobs);
   const [res, setRes] = useState(1);
+  const [panoRoom, setPanoRoom] = useState(() => useEditor.getState().selection?.kind === 'room' ? useEditor.getState().selection!.id : '');
   const est = buildEstimate(project);
   const total = est.reduce((a, l) => a + l.total, 0);
   const slug = project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
@@ -101,6 +102,17 @@ export default function ExportPanel() {
           </Field>
           <Btn variant="primary" className="w-full" onClick={render}><Camera size={14} /> Export current 3D view</Btn>
           <p className="text-[11px] text-stone-500">Saves exactly what the 3D camera shows, at the chosen size (this device supports up to {hasViewport() ? maxExportSide() : 4096} px). It is the real-time view, not a photorealistic render.</p>
+        </div>
+      </Section>
+      <Section title="360° panorama">
+        <div className="space-y-2">
+          <select className={inputCls} value={panoRoom} onChange={(e) => setPanoRoom(e.target.value)} aria-label="Room for the panorama">
+            {project.scene.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <Btn variant="outline" className="w-full" disabled={!project.scene.rooms.length} onClick={async () => {
+            try { await ensureViewport(); window.dispatchEvent(new CustomEvent('archiform:pano', { detail: panoRoom || project.scene.rooms[0]?.id })); } catch (e) { useEditor.getState().toast((e as Error).message, 'error'); }
+          }}><Camera size={14} /> Capture 360° from this room</Btn>
+          <p className="text-[11px] text-stone-500">Stands at eye height (1.5 m) in the middle of the room. In the walkthrough, the 360° button captures from where you stand. Uses the current Day / Evening / Night lighting.</p>
         </div>
       </Section>
       <Section title="Reports & files">

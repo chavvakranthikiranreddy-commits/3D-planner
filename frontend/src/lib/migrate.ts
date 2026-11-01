@@ -67,6 +67,12 @@ export function validateScene(input: unknown): Scene {
     if (!isNum(o.x) || !isNum(o.y) || !isNum(o.rotation ?? 0, -1000, 1000) || !d || !isNum(d.w, 0.001, 100) || !isNum(d.h, 0.001, 100) || !isNum(d.d, 0.001, 100)) fail(`Item ${i + 1} has invalid size or position.`);
     if (typeof o.imageDataUrl === 'string' && o.imageDataUrl.length > 6_000_000) fail(`Item ${i + 1} carries an image that is too large.`);
   });
+  if (s.electrical !== undefined) {
+    if (!Array.isArray(s.electrical)) s.electrical = [];
+    if ((s.electrical as unknown[]).length > MAX_ITEMS) fail('Too many electrical points.');
+    s.electrical = (s.electrical as Record<string, unknown>[]).filter((e) => e && isStr(e.id, 64) && floorIds.has(e.floorId as string) && isNum(e.x) && isNum(e.y) && typeof e.kind === 'string')
+      .map((e) => ({ ...e, height: isNum(e.height, 0, 30) ? e.height : 1.2 }));
+  }
   if (!s.materials || typeof s.materials !== 'object') s.materials = {};
   const base = emptyScene();
   if (!s.lighting || typeof s.lighting !== 'object') s.lighting = base.lighting;

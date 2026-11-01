@@ -3,6 +3,7 @@ import { useEditor, blueprintFor } from '../store/editor';
 import type { Pt, Wall } from '../lib/types';
 import { applyAttachments, attachmentsAt, bbox, centroid, dist, fmtArea, fmtLen, orthoAssist, polygonArea, projectOnSegment, snapPt, snapToEndpoints, wallAngle, wallLength, type Attachments } from '../lib/geometry';
 import { makeRoom, makeWall, uid } from '../lib/templates';
+import { ELEC, makePoint, snapToWall, symbolSvg } from '../lib/electrical';
 
 type Drag =
   | { type: 'pan'; sx: number; sy: number; ox: number; oy: number }
@@ -12,6 +13,7 @@ type Drag =
   | { type: 'roomVertex'; id: string; index: number }
   | { type: 'room'; id: string; start: Pt; poly: Pt[] }
   | { type: 'opening'; id: string }
+  | { type: 'elec'; id: string; dx: number; dy: number }
   | null;
 
 const deg = (r: number) => (r * 180) / Math.PI;
@@ -22,6 +24,7 @@ export default function Plan2D() {
   const units = project.units;
   const tool = useEditor((st) => st.tool), selection = useEditor((st) => st.selection), activeFloorId = useEditor((st) => st.activeFloorId);
   const gridSnap = useEditor((st) => st.gridSnap), showBlueprint = useEditor((st) => st.showBlueprint), settings = useEditor((st) => st.settings);
+  const showElectrical = useEditor((st) => st.showElectrical), elecKind = useEditor((st) => st.elecKind);
   const { mutate, select, setTool, toast } = useEditor.getState();
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ zoom: 50, ox: 40, oy: 40 }); // zoom = px per metre
@@ -35,6 +38,7 @@ export default function Plan2D() {
   const walls = scene.walls.filter((w) => w.floorId === floor.id);
   const rooms = scene.rooms.filter((r) => r.floorId === floor.id);
   const objects = scene.objects.filter((o) => o.floorId === floor.id);
+  const elecPts = (scene.electrical ?? []).filter((e) => e.floorId === floor.id);
   const below = scene.floors.find((f) => f.level === floor.level - 1);
   const ghostWalls = below ? scene.walls.filter((w) => w.floorId === below.id) : [];
   const bp = blueprintFor(project, floor.id);
@@ -158,6 +162,19 @@ export default function Plan2D() {
       });
       return;
     }
+    if (tool === 'electric') {
+      const meta = ELEC[elecKind];
+      let pt: Pt = gridSnap ? snapPt(p, 0.05) : p, facing: number | undefined;
+      if (meta.mount === 'wall') {
+        const sn = snapToWall(scene, floor.id, p, 0.8);
+        if (!sn) { toast(`Click near a wall to place a ${meta.label.toLowerCase()}.`, 'info'); return; }
+        pt = sn.p; facing = sn.facing;
+      }
+      const np = makePoint(floor.id, elecKind, pt, facing);
+      mutate((s) => { s.electrical = [...(s.electrical ?? []), np]; });
+      select({ kind: 'elec', id: np.id });
+      return;
+    }
     if (tool === 'calibrate') {
       const next = [...calib, p];
       if (next.length === 2) {
@@ -221,6 +238,12 @@ export default function Plan2D() {
     } else if (d.type === 'room') {
       const off = g({ x: p.x - d.start.x, y: p.y - d.start.y });
       mutate((s) => { const r = s.rooms.find((x) => x.id === d.id); if (r) r.polygon = d.poly.map((v) => ({ x: v.x + off.x, y: v.y + off.y })); }, 'drag:' + d.id);
+    } else if (d.type === 'elec') {
+      const e = elecPts.find((x) => x.id === d.id); if (!e) return;
+      const q = { x: p.x - d.dx, y: p.y - d.dy };
+      const sn = ELEC[e.kind].mount === 'wall' ? snapToWall(scene, floor.id, q, 0.8) : null;
+      const np = sn ? sn.p : g(q);
+      mutate((s) => { const x = s.electrical?.find((z) => z.id === d.id); if (x) { x.x = np.x; x.y = np.y; if (sn) x.facing = sn.facing; } }, 'drag:' + d.id);
     } else if (d.type === 'opening') {
       const o = scene.openings.find((x) => x.id === d.id);
       const w = o && scene.walls.find((x) => x.id === o.wallId);
@@ -352,6 +375,25 @@ export default function Plan2D() {
             );
           })}
 
+          {showElectrical && elecPts.map((e) => {
+            const sel = selection?.kind === 'elec' && selection.id === e.id;
+            const r = Math.max(0.07, 9 * px);
+            return (
+              <g key={e.id} transform={`translate(${e.x} ${e.y})`} style={{ cursor: tool === 'select' ? 'move' : undefined }}
+                onPointerDown={(ev) => { const p = toPlan(ev); startDrag(ev, { type: 'elec', id: e.id, dx: p.x - e.x, dy: p.y - e.y }, { kind: 'elec', id: e.id }); }}>
+                {sel && <circle r={r * 1.6} fill="none" stroke="#f59e0b" strokeWidth={2 * px} />}
+                <g dangerouslySetInnerHTML={{ __html: symbolSvg(e, 0, 0, r) }} />
+              </g>
+            );
+          })}
+          {tool === 'electric' && cursor && (() => {
+            const meta = ELEC[elecKind];
+            const sn = meta.mount === 'wall' ? snapToWall(scene, floor.id, cursor, 0.8) : null;
+            const at = meta.mount === 'wall' ? sn?.p : cursor;
+            if (!at) return null;
+            return <g transform={`translate(${at.x} ${at.y})`} opacity={0.6} style={{ pointerEvents: 'none' }} dangerouslySetInnerHTML={{ __html: symbolSvg({ kind: elecKind }, 0, 0, Math.max(0.07, 9 * px)) }} />;
+          })()}
+
           {/* selected wall: endpoints + dimension */}
           {selection?.kind === 'wall' && (() => {
             const w = walls.find((x) => x.id === selection.id);
@@ -419,6 +461,11 @@ export default function Plan2D() {
       {(tool === 'wall' || tool === 'room') && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-stone-900/90 px-3 py-1.5 text-xs text-stone-300">
           {tool === 'wall' ? 'Click to place wall points · double-click / Enter / right-click to finish' : 'Click room corners · click the first point or press Enter to close'}
+        </div>
+      )}
+      {tool === 'electric' && (
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-stone-900/90 px-3 py-1.5 text-xs text-stone-300">
+          Placing: <b className="text-amber-300">{ELEC[elecKind].label}</b> · {ELEC[elecKind].mount === 'wall' ? 'click near a wall' : 'click inside a room'} · Esc / V to stop
         </div>
       )}
       {tool === 'calibrate' && (

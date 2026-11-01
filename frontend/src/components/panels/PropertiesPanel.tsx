@@ -6,6 +6,8 @@ import { getAsset } from '../../lib/catalog';
 import { CEILING_TYPES, ceilingClearance, defaultCeiling } from '../../lib/interiors';
 import { parseColorInput } from '../../lib/materials';
 import { uid } from '../../lib/templates';
+import { ElecPointEditor } from './ElectricalPanel';
+import ModularSection from './ModularSection';
 import type { Opening, Room, RoomType, SceneObject, Wall } from '../../lib/types';
 
 const ROOM_TYPES: RoomType[] = ['living', 'bedroom', 'kitchen', 'dining', 'bathroom', 'office', 'hallway', 'balcony', 'utility', 'pooja', 'other'];
@@ -175,6 +177,11 @@ export default function PropertiesPanel() {
     );
   }
 
+  if (selection.kind === 'elec') {
+    const e = s.electrical?.find((x) => x.id === selection.id);
+    return e ? <Section title="Electrical point"><ElecPointEditor e={e} /></Section> : <Section title="Electrical point"><Empty>Point not found.</Empty></Section>;
+  }
+
   if (selection.kind === 'opening') {
     const o = s.openings.find((x) => x.id === selection.id);
     const w = o && s.walls.find((x) => x.id === o.wallId);
@@ -308,6 +315,7 @@ export default function PropertiesPanel() {
           </div>
         </div>
       </Section>
+      <ModularSection o={o} />
     </>
   );
 }
