@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Camera, FileText, FileJson, Download, X, RotateCcw, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { Badge, Btn, Field, Section, inputCls } from '../ui';
-import { captureFrame, downloadDataUrl, downloadText, hasViewport } from '../../lib/capture';
-import { cancelJob, retryJob, runJob, nextFrame } from '../../lib/jobs';
-import { buildReport } from '../../lib/report';
+import { captureFrame, downloadDataUrl, downloadText, hasViewport, maxExportSide } from '../../lib/capture';
+import { cancelJob, ensureActive, retryJob, runJob, nextFrame } from '../../lib/jobs';
+import { buildReport, hasUnsupportedText } from '../../lib/report';
 import { buildEstimate } from '../../lib/estimate';
 import type { Job } from '../../lib/types';
 
@@ -42,7 +42,7 @@ export function JobRow({ j }: { j: Job }) {
       {j.status === 'succeeded' && j.result && j.type === 'render' && (
         <div className="mt-2 flex items-center gap-2">
           <img src={j.result} alt="Render" className="h-12 w-20 rounded object-cover" />
-          <Btn variant="outline" onClick={() => downloadDataUrl(j.result!, `render-${j.id}.png`)}><Download size={14} /> Download</Btn>
+          <Btn variant="outline" onClick={() => downloadDataUrl(j.result!, `3d-view-${j.id}.png`)}><Download size={14} /> Download</Btn>
         </div>
       )}
     </li>
@@ -53,20 +53,19 @@ export default function ExportPanel() {
   const project = useEditor((s) => s.project)!;
   const jobs = useEditor((s) => s.jobs);
   const [res, setRes] = useState(1);
-  const [quality, setQuality] = useState<'standard' | 'high'>('high');
   const est = buildEstimate(project);
   const total = est.reduce((a, l) => a + l.total, 0);
   const slug = project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
 
   const render = () => {
     const r = RES[res];
-    runJob('render', `Render ${r.w}×${r.h}`, async (progress, signal) => {
+    const pid = project.id;
+    runJob('render', `3D view ${r.w}×${r.h}`, async (progress, signal) => {
       await ensureViewport();
+      ensureActive(signal, pid);
       progress(0.3);
-      const { project: p } = useEditor.getState();
-      // high quality: temporarily boost the sun shadow + exposure settings by re-rendering a few frames
-      if (quality === 'high' && p) { for (let i = 0; i < 4; i++) { await nextFrame(); progress(0.3 + i * 0.1); } }
-      if (signal.aborted) return;
+      await nextFrame(); // let textures finish uploading
+      ensureActive(signal, pid);
       const url = captureFrame(r.w, r.h);
       if (!url) throw new Error('Could not capture the 3D view.');
       progress(0.95);
@@ -74,12 +73,16 @@ export default function ExportPanel() {
     });
   };
   const report = () => {
-    runJob('report', 'PDF project report', async (progress) => {
+    // capture the project now so a later project switch can't change the report's data
+    const snapshot = useEditor.getState().project!;
+    runJob('report', 'PDF project report', async (progress, signal) => {
       await ensureViewport();
+      ensureActive(signal, snapshot.id);
       progress(0.3);
       const img = captureFrame(1600, 900, 'image/jpeg');
       progress(0.6);
-      const doc = buildReport(useEditor.getState().project!, img);
+      const doc = buildReport(snapshot, img);
+      ensureActive(signal, snapshot.id); // no download after Cancel
       doc.save(`${slug}-report.pdf`);
       progress(1);
     });
@@ -91,22 +94,23 @@ export default function ExportPanel() {
 
   return (
     <>
-      <Section title="Render image">
+      <Section title="Export 3D view (PNG)">
         <div className="space-y-2">
           <Field label="Resolution">
             <select className={inputCls} value={res} onChange={(e) => setRes(+e.target.value)}>{RES.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}</select>
           </Field>
-          <div className="flex overflow-hidden rounded-md border border-stone-700 text-xs">
-            {(['standard', 'high'] as const).map((q) => <button key={q} onClick={() => setQuality(q)} className={`flex-1 py-1.5 capitalize ${quality === q ? 'bg-amber-500 text-stone-950' : 'text-stone-300'}`}>{q}</button>)}
-          </div>
-          <Btn variant="primary" className="w-full" onClick={render}><Camera size={14} /> Render current camera</Btn>
-          <p className="text-[11px] text-stone-500">Renders the 3D camera as framed. Photoreal path-traced renders (Blender worker) run on the optional backend.</p>
+          <Btn variant="primary" className="w-full" onClick={render}><Camera size={14} /> Export current 3D view</Btn>
+          <p className="text-[11px] text-stone-500">Saves exactly what the 3D camera shows, at the chosen size (this device supports up to {hasViewport() ? maxExportSide() : 4096} px). It is the real-time view, not a photorealistic render.</p>
         </div>
       </Section>
       <Section title="Reports & files">
         <div className="space-y-2">
+          {hasUnsupportedText([project.name, ...project.scene.rooms.map((r) => r.name), ...project.scene.objects.map((o) => o.name)].join(' ')) && (
+            <p className="rounded-md bg-amber-500/10 p-2 text-[11px] text-amber-200">Some names use characters (e.g. Telugu or Hindi script) that the PDF font can't show — they will appear as “?”. Use English names for the report.</p>
+          )}
           <Btn variant="outline" className="w-full" onClick={report}><FileText size={14} /> PDF report (dimensions, finishes, products, estimate)</Btn>
-          <Btn variant="outline" className="w-full" onClick={exportJson}><FileJson size={14} /> Export project file (.json)</Btn>
+          <Btn variant="outline" className="w-full" onClick={exportJson}><FileJson size={14} /> Back up project file (.json)</Btn>
+          <p className="text-[11px] text-stone-500">Projects are saved on this device only. Keep a backup file to move to another device or recover after clearing browser data.</p>
           <div className="rounded-md bg-stone-800/50 p-2 text-xs text-stone-300">
             Indicative total: <b className="text-stone-100">{project.currency}{Math.round(total).toLocaleString('en-IN')}</b> across {est.length} lines
             <p className="mt-1 text-[10px] text-stone-500">Not a quotation — see report assumptions.</p>

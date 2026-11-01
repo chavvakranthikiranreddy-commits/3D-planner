@@ -8,7 +8,13 @@
 export interface Gray { data: Uint8ClampedArray | Uint8Array; width: number; height: number }
 export interface DetWall { id: number; x0: number; y0: number; x1: number; y1: number; thickness: number; confidence: number; orient: 'h' | 'v' }
 export interface DetOpening { wallId: number; type: 'door' | 'window'; center: number; width: number; confidence: number }
-export interface DetRoom { x0: number; y0: number; x1: number; y1: number; areaPx: number; confidence: number }
+export interface DetRoom {
+  x0: number; y0: number; x1: number; y1: number; areaPx: number; confidence: number;
+  /** Traced outline in pixels (keeps concave corners of L-shaped rooms). */
+  polygon: { x: number; y: number }[];
+  /** True when the outline is not a plain rectangle — flagged for review. */
+  irregular: boolean;
+}
 export interface DetectOptions {
   darkThreshold?: number; // 0..255, pixels darker than this are ink
   minWallPx?: number; // minimum wall run length
@@ -96,9 +102,15 @@ export function detectPlan(g: Gray, opts: DetectOptions = {}): DetectResult {
   const minLen = opts.minWallPx ?? Math.max(12, Math.round(maxDim * 0.025));
   const minT = opts.minThickPx ?? Math.max(3, Math.round(maxDim * 0.003));
   const maxT = opts.maxThickPx ?? Math.max(minT + 4, Math.round(maxDim * 0.04));
+  // Inclusive comparison: Otsu returns 0 for pure black-on-white drawings, and `< 0` would find no ink.
   const mask = new Uint8Array(W * H);
   let ink = 0;
-  for (let i = 0; i < mask.length; i++) if (g.data[i] < thr) { mask[i] = 1; ink++; }
+  for (let i = 0; i < mask.length; i++) if (g.data[i] <= thr) { mask[i] = 1; ink++; }
+  // Inverted drawings (light lines on a dark sheet): ink would cover most of the page.
+  if (ink > mask.length * 0.5) {
+    for (let i = 0; i < mask.length; i++) mask[i] = mask[i] ? 0 : 1;
+    ink = mask.length - ink;
+  }
 
   // Thin-line suppression: a pixel can belong to a horizontal wall only if its vertical
   // ink run is at least minT (and vice-versa). This removes window glazing lines, hatching,
@@ -226,7 +238,7 @@ export function detectPlan(g: Gray, opts: DetectOptions = {}): DetectResult {
 function findRooms(walls: DetWall[], W: number, H: number, ppm: number | null): DetRoom[] {
   const k = Math.max(1, Math.round(Math.max(W, H) / 400));
   const w = Math.ceil(W / k) + 2, h = Math.ceil(H / k) + 2;
-  const grid = new Uint8Array(w * h); // 1 = wall, 2 = exterior, 3+ = room labels
+  const grid = new Int32Array(w * h); // 1 = wall, 2 = exterior, 3+ = room labels
   for (const s of walls) {
     const t = Math.max(1, Math.ceil(s.thickness / k / 2) + 1);
     const x0 = Math.floor(Math.min(s.x0, s.x1) / k) + 1 - (s.orient === 'v' ? t : 0);
@@ -262,10 +274,85 @@ function findRooms(walls: DetWall[], W: number, H: number, ppm: number | null): 
     if (r.n < minArea) continue;
     const bboxArea = (r.maxX - r.minX + 1) * (r.maxY - r.minY + 1);
     const rectness = r.n / bboxArea;
+    const outline = traceRegion(grid, w, h, label - 1, r);
+    const poly = outline.map((p) => ({ x: (p.x - 1) * k, y: (p.y - 1) * k }));
     rooms.push({
       x0: (r.minX - 1) * k, y0: (r.minY - 1) * k, x1: (r.maxX) * k, y1: (r.maxY) * k,
       areaPx: r.n * k * k, confidence: +(0.4 + 0.5 * rectness).toFixed(2),
+      polygon: poly, irregular: poly.length > 4 || rectness < 0.97,
     });
   }
   return rooms;
+}
+
+/** Trace the outer boundary of a labelled grid region into a simplified polygon (grid-corner coordinates). */
+function traceRegion(grid: Int32Array, w: number, h: number, label: number, r: { minX: number; maxX: number; minY: number; maxY: number }) {
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && grid[y * w + x] === label;
+  const next = new Map<number, number[]>(); // vertex key → end vertex keys (clockwise, interior on the right in screen space)
+  const key = (x: number, y: number) => y * (w + 1) + x;
+  const add = (x0: number, y0: number, x1: number, y1: number) => {
+    const k0 = key(x0, y0);
+    const l = next.get(k0);
+    if (l) l.push(key(x1, y1)); else next.set(k0, [key(x1, y1)]);
+  };
+  for (let y = r.minY; y <= r.maxY; y++) for (let x = r.minX; x <= r.maxX; x++) {
+    if (!at(x, y)) continue;
+    if (!at(x, y - 1)) add(x, y, x + 1, y);
+    if (!at(x + 1, y)) add(x + 1, y, x + 1, y + 1);
+    if (!at(x, y + 1)) add(x + 1, y + 1, x, y + 1);
+    if (!at(x - 1, y)) add(x, y + 1, x, y);
+  }
+  const loops: { x: number; y: number }[][] = [];
+  for (const start of [...next.keys()]) {
+    while (next.get(start)?.length) {
+      const loop: { x: number; y: number }[] = [];
+      let cur = start;
+      for (let guard = 0; guard < 1e6; guard++) {
+        loop.push({ x: cur % (w + 1), y: Math.floor(cur / (w + 1)) });
+        const outs = next.get(cur);
+        if (!outs || !outs.length) break;
+        const nx = outs.shift()!;
+        cur = nx;
+        if (cur === start) break;
+      }
+      if (loop.length >= 4) loops.push(loop);
+    }
+  }
+  const area = (p: { x: number; y: number }[]) => Math.abs(p.reduce((a, q, i) => { const n = p[(i + 1) % p.length]; return a + q.x * n.y - n.x * q.y; }, 0)) / 2;
+  const outer = loops.sort((a, b) => area(b) - area(a))[0] ?? [];
+  return simplify(dropCollinear(outer), 1.25);
+}
+
+function dropCollinear(p: { x: number; y: number }[]) {
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[(i - 1 + p.length) % p.length], b = p[i], c = p[(i + 1) % p.length];
+    if ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) !== 0) out.push(b);
+  }
+  return out;
+}
+
+/** Douglas–Peucker on a closed ring; removes 1-cell raster steps but keeps real corners. */
+function simplify(p: { x: number; y: number }[], eps: number) {
+  if (p.length <= 4) return p;
+  // split the ring at the two most distant points
+  let i0 = 0, i1 = 0, best = -1;
+  for (let i = 0; i < p.length; i++) { const d = (p[i].x - p[0].x) ** 2 + (p[i].y - p[0].y) ** 2; if (d > best) { best = d; i1 = i; } }
+  const dp = (pts: { x: number; y: number }[]): { x: number; y: number }[] => {
+    if (pts.length < 3) return pts;
+    const a = pts[0], b = pts[pts.length - 1];
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1e-9;
+    let idx = 0, dmax = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const d = Math.abs((b.x - a.x) * (a.y - pts[i].y) - (a.x - pts[i].x) * (b.y - a.y)) / L;
+      if (d > dmax) { dmax = d; idx = i; }
+    }
+    if (dmax <= eps) return [a, b];
+    const left = dp(pts.slice(0, idx + 1)), right = dp(pts.slice(idx));
+    return [...left.slice(0, -1), ...right];
+  };
+  const first = dp(p.slice(i0, i1 + 1));
+  const second = dp([...p.slice(i1), p[i0]]);
+  const ring = [...first.slice(0, -1), ...second.slice(0, -1)];
+  return ring.length >= 3 ? ring : p;
 }

@@ -1,6 +1,8 @@
-import type { Lighting, Material, Room, RoomType, Scene, SceneObject } from './types';
+import type { Lighting, Material, RoomType, Scene, SceneObject } from './types';
 import { CATALOG, getAsset, type AssetStyle } from './catalog';
-import { bbox, projectOnSegment, setWallMaterial, wallSideFacing } from './geometry';
+import { bbox, setWallSpanMaterial } from './geometry';
+import { findSpot, objectInRoom, roomWallSides } from './placement';
+export { roomWallSides } from './placement';
 import { makeObject, uid } from './templates';
 import { parseColorInput } from './materials';
 
@@ -10,19 +12,23 @@ import { parseColorInput } from './materials';
  * Proposals can never move walls, rooms or openings; only finishes, furniture and lighting.
  */
 export type Change =
-  | { id: string; kind: 'paint-walls'; label: string; targets: { wallId: string; side: 'A' | 'B' }[]; material: Material }
+  | { id: string; kind: 'paint-walls'; label: string; targets: { wallId: string; side: 'A' | 'B'; from: number; to: number }[]; material: Material }
   | { id: string; kind: 'floor'; label: string; roomId: string; materialId: string }
   | { id: string; kind: 'add'; label: string; object: SceneObject }
   | { id: string; kind: 'remove'; label: string; objectId: string }
   | { id: string; kind: 'lighting'; label: string; lighting: Partial<Lighting> };
 
 export interface Proposal { provider: string; summary: string; changes: Change[]; estimatedCost: number; notes: string[] }
-export interface DesignRequest { roomId: string; style: AssetStyle; prompt: string; budget?: number; palette?: string[]; replaceFurniture: boolean }
+export interface DesignRequest {
+  roomId: string; style: AssetStyle; prompt: string; budget?: number; palette?: string[]; replaceFurniture: boolean;
+  /** Explicit overrides (e.g. validated server suggestions) — take precedence over prompt parsing. */
+  overrides?: { wallColor?: string; accentColor?: string; floorMaterialId?: string };
+}
 
 export interface DesignProvider {
   id: string;
   name: string;
-  propose(scene: Scene, req: DesignRequest): Promise<Proposal>;
+  propose(scene: Scene, req: DesignRequest, signal?: AbortSignal): Promise<Proposal>;
 }
 
 interface StyleProfile { wall: string; accentWall?: string; floor: string; upholstery: string; wood: string; metal: string; warmth: number; note: string }
@@ -45,6 +51,8 @@ const COLOR_WORDS: Record<string, string> = {
 
 type Role = { role: string; ids: string[]; place: (b: ReturnType<typeof bbox>, d: { w: number; d: number }) => { x: number; y: number; r: number } | null };
 const inset = 0.15;
+/** Roles that stand against a wall facing into the room. */
+const WALL_ROLES = new Set(['sofa', 'tv', 'bed', 'ns1', 'ns2', 'wardrobe', 'base', 'wall', 'fridge', 'sideboard', 'vanity', 'wc', 'desk', 'shelf', 'pooja', 'art', 'mirror']);
 const LAYOUTS: Partial<Record<RoomType, Role[]>> = {
   living: [
     { role: 'sofa', ids: ['sofa-l', 'sofa-3', 'sofa-2'], place: (b, d) => ({ x: (b.minX + b.maxX) / 2, y: b.maxY - d.d / 2 - inset, r: Math.PI }) },
@@ -91,18 +99,6 @@ const LAYOUTS: Partial<Record<RoomType, Role[]>> = {
   pooja: [{ role: 'pooja', ids: ['pooja-unit'], place: (b, d) => ({ x: (b.minX + b.maxX) / 2, y: b.minY + d.d / 2 + inset, r: 0 }) }],
 };
 
-/** Walls bounding a room, with the face that looks into it. */
-export function roomWallSides(scene: Scene, room: Room) {
-  return wallsOfRoom(scene, room).map((w) => ({ wall: w, side: wallSideFacing(w, room.polygon) }));
-}
-
-/** Walls that bound a room: both endpoints lie on the room outline. */
-export function wallsOfRoom(scene: Scene, room: Room) {
-  const edges = room.polygon.map((p, i) => [p, room.polygon[(i + 1) % room.polygon.length]] as const);
-  return scene.walls.filter((w) => w.floorId === room.floorId && [w.a, w.b, { x: (w.a.x + w.b.x) / 2, y: (w.a.y + w.b.y) / 2 }]
-    .filter((p) => edges.some(([e0, e1]) => projectOnSegment(p, e0, e1).distance < Math.max(0.25, w.thickness))).length >= 2);
-}
-
 function pickAsset(ids: string[], style: AssetStyle, b: ReturnType<typeof bbox>) {
   const fits = (id: string) => { const a = getAsset(id)!; return a.dims.w < b.maxX - b.minX - 0.3 && a.dims.d < b.maxY - b.minY - 0.3; };
   return ids.find((id) => fits(id) && getAsset(id)!.styles.includes(style)) ?? ids.find(fits);
@@ -122,6 +118,9 @@ export const localProvider: DesignProvider = {
     const word = Object.keys(COLOR_WORDS).find((w) => new RegExp(`\\b${w}\\b`).test(text));
     const chosen = (hex && parseColorInput(hex)) || (req.palette && req.palette[0]) || (word && COLOR_WORDS[word]) || null;
     if (chosen) { prof.wall = chosen; notes.push(`Wall colour taken from your ${hex ? 'HEX code' : req.palette ? 'palette' : `"${word}" prompt`}.`); }
+    const ov = req.overrides ?? {};
+    if (ov.wallColor && !hex) { prof.wall = ov.wallColor; notes.push(`Wall colour ${ov.wallColor} suggested by the server AI.`); }
+    if (ov.accentColor) prof.accentWall = ov.accentColor;
     if (/\b(dark|moody)\b/.test(text)) { prof.wall = '#4a4a4f'; prof.warmth = 0.6; }
     if (/\b(bright|airy|light)\b/.test(text)) prof.warmth = Math.min(prof.warmth, 0.45);
     if (/\bwarm|cosy|cozy\b/.test(text)) prof.warmth = 0.75;
@@ -131,21 +130,25 @@ export const localProvider: DesignProvider = {
     if (walls.length) {
       const mat: Material = { id: 'ai-' + uid(), name: `${req.style} wall`, kind: 'paint', colorHex: prof.wall, roughness: 0.9, metalness: 0, pattern: 'none', pricePerM2: 40 };
       const accentIdx = prof.accentWall && walls.length > 2 && !chosen ? 0 : -1;
-      changes.push({ id: uid(), kind: 'paint-walls', label: `Paint ${walls.length - (accentIdx >= 0 ? 1 : 0)} walls ${prof.wall}`, targets: walls.filter((_, i) => i !== accentIdx).map((w) => ({ wallId: w.wall.id, side: w.side })), material: mat });
+      changes.push({ id: uid(), kind: 'paint-walls', label: `Paint ${walls.length - (accentIdx >= 0 ? 1 : 0)} wall faces ${prof.wall}`, targets: walls.filter((_, i) => i !== accentIdx).map((w) => ({ wallId: w.wall.id, side: w.side, from: w.from, to: w.to })), material: mat });
       if (accentIdx >= 0) {
         const am: Material = { ...mat, id: 'ai-' + uid(), name: `${req.style} accent`, colorHex: prof.accentWall! };
-        changes.push({ id: uid(), kind: 'paint-walls', label: `Accent wall ${prof.accentWall}`, targets: [{ wallId: walls[accentIdx].wall.id, side: walls[accentIdx].side }], material: am });
+        changes.push({ id: uid(), kind: 'paint-walls', label: `Accent wall ${prof.accentWall}`, targets: [{ wallId: walls[accentIdx].wall.id, side: walls[accentIdx].side, from: walls[accentIdx].from, to: walls[accentIdx].to }], material: am });
       }
     }
-    const floorId = /\bwood|oak|timber\b/.test(text) ? 'wood-oak' : /\bmarble\b/.test(text) ? 'stone-marble' : /\btile\b/.test(text) ? 'tile-vitrified' : room.roomType === 'bathroom' ? 'tile-vitrified' : prof.floor;
+    const floorId = req.overrides?.floorMaterialId ?? /\bwood|oak|timber\b/.test(text) ? 'wood-oak' : /\bmarble\b/.test(text) ? 'stone-marble' : /\btile\b/.test(text) ? 'tile-vitrified' : room.roomType === 'bathroom' ? 'tile-vitrified' : prof.floor;
     if (floorId !== room.floorMaterialId) changes.push({ id: uid(), kind: 'floor', label: `Floor → ${scene.materials[floorId]?.name ?? floorId}`, roomId: room.id, materialId: floorId });
 
-    const inRoom = scene.objects.filter((o) => o.floorId === room.floorId && o.x >= bbox(room.polygon).minX && o.x <= bbox(room.polygon).maxX && o.y >= bbox(room.polygon).minY && o.y <= bbox(room.polygon).maxY);
+    // membership by the real room outline, not its bounding box (concave rooms)
+    const inRoom = scene.objects.filter((o) => objectInRoom(o, room));
     if (req.replaceFurniture) inRoom.forEach((o) => changes.push({ id: uid(), kind: 'remove', label: `Remove ${o.name}`, objectId: o.id }));
     const layout = LAYOUTS[room.roomType] ?? LAYOUTS.living!;
     const b = bbox(room.polygon);
     let cost = 0;
     const minimal = req.style === 'minimal' || /\bminimal|sparse\b/.test(text);
+    // every placed item becomes an obstacle for the next one
+    const occupied = scene.objects.filter((o) => !(req.replaceFurniture && objectInRoom(o, room)));
+    const skipped: string[] = [];
     for (const role of layout) {
       if (minimal && ['plant', 'art', 'armchair', 'rug', 'lamp'].includes(role.role)) continue;
       if (!req.replaceFurniture && inRoom.some((o) => role.ids.includes(o.assetId))) continue;
@@ -153,15 +156,24 @@ export const localProvider: DesignProvider = {
       if (!id) continue;
       const a = getAsset(id)!;
       if (req.budget && cost + a.price > req.budget) { notes.push(`Skipped ${a.name} to stay within budget.`); continue; }
-      const pos = role.place(b, a.dims);
-      if (!pos) continue;
-      const o = makeObject(id, room.floorId, +pos.x.toFixed(2), +pos.y.toFixed(2), pos.r, 'ai');
+      const pref = role.place(b, a.dims);
+      if (!pref && role.role !== 'armchair') continue;
+      if (!pref) continue;
+      const spot = findSpot(scene, room, { dims: a.dims, assetId: a.id, elevation: a.elevation }, {
+        kind: WALL_ROLES.has(role.role) ? 'wall' : 'center',
+        preferred: { x: pref.x, y: pref.y, rotation: pref.r },
+        others: occupied,
+      });
+      if (!spot) { skipped.push(a.name); continue; }
+      const o = makeObject(id, room.floorId, spot.x, spot.y, spot.rotation, 'ai');
       if (['seating', 'beds'].includes(a.category)) o.colorHex = prof.upholstery;
       else if (['tables', 'storage'].includes(a.category) && !['tv-unit'].includes(id)) o.colorHex = prof.wood;
       if (a.category === 'lighting') o.colorHex = prof.metal;
+      occupied.push(o);
       cost += a.price;
       changes.push({ id: uid(), kind: 'add', label: `Add ${a.name}`, object: o });
     }
+    if (skipped.length) notes.push(`No safe spot found for: ${skipped.join(', ')} (room too small, or doors and furniture in the way).`);
     changes.push({ id: uid(), kind: 'lighting', label: `Lighting warmth ${Math.round(prof.warmth * 100)}%`, lighting: { warmth: prof.warmth } });
     return {
       provider: this.name,
@@ -177,18 +189,27 @@ export function remoteProvider(baseUrl: string, token: string): DesignProvider {
   return {
     id: 'remote',
     name: 'Server AI provider',
-    async propose(scene, req) {
+    async propose(scene, req, signal?: AbortSignal) {
       const room = scene.rooms.find((r) => r.id === req.roomId);
       const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/ai/design-proposal`, {
+        signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ room, request: req, catalog: CATALOG.map((a) => ({ id: a.id, name: a.name, category: a.category, dims: a.dims, styles: a.styles, price: a.price })) }),
       });
       if (!res.ok) throw new Error(res.status === 501 ? 'The server has no AI provider configured.' : `Server error ${res.status}`);
       const data = await res.json();
-      // The server returns high-level suggestions; we turn them into safe structured edits locally.
-      const base = await localProvider.propose(scene, { ...req, style: data.style ?? req.style, prompt: `${req.prompt} ${data.wall_color ?? ''}`.trim() });
-      return { ...base, provider: data.provider ?? 'Server AI', summary: data.summary ?? base.summary, notes: [...(data.notes ?? []), ...base.notes] };
+      // The server returns high-level suggestions; map each supported field explicitly into safe local edits.
+      const hex = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : undefined);
+      const FLOORS: Record<string, string> = { oak: 'wood-oak', walnut: 'wood-walnut', marble: 'stone-marble', terrazzo: 'stone-terrazzo', tile: 'tile-vitrified', concrete: 'concrete' };
+      const STYLES_OK = ['modern', 'scandinavian', 'industrial', 'indian-contemporary', 'minimal', 'boho', 'luxury', 'classic'];
+      const used: string[] = [], ignored: string[] = [];
+      const style = STYLES_OK.includes(data.style) ? data.style : req.style;
+      (STYLES_OK.includes(data.style) ? used : data.style ? ignored : []).push(`style “${data.style}”`);
+      const overrides = { wallColor: hex(data.wall_color), accentColor: hex(data.accent_color), floorMaterialId: FLOORS[data.floor as string] };
+      for (const [k, v] of [['wall colour', overrides.wallColor], ['accent colour', overrides.accentColor], ['floor', overrides.floorMaterialId]] as const) (v ? used : ignored).push(k);
+      const base = await localProvider.propose(scene, { ...req, style, overrides });
+      return { ...base, provider: data.provider ?? 'Server AI', summary: data.summary ?? base.summary, notes: [`Server suggestions applied: ${used.join(', ') || 'none'}${ignored.length ? `; not provided/unsupported: ${ignored.join(', ')}` : ''}.`, ...(Array.isArray(data.notes) ? data.notes.map(String).slice(0, 4) : []), ...base.notes] };
     },
   };
 }
@@ -198,7 +219,7 @@ export function applyChanges(s: Scene, changes: Change[]) {
   for (const c of changes) {
     if (c.kind === 'paint-walls') {
       s.materials[c.material.id] = c.material;
-      for (const t of c.targets) { const w = s.walls.find((x) => x.id === t.wallId); if (w) setWallMaterial(w, t.side, c.material.id); }
+      for (const t of c.targets) { const w = s.walls.find((x) => x.id === t.wallId); if (w) setWallSpanMaterial(w, t.side, t.from, t.to, c.material.id); }
     } else if (c.kind === 'floor') {
       const r = s.rooms.find((x) => x.id === c.roomId);
       if (r && s.materials[c.materialId]) r.floorMaterialId = c.materialId;

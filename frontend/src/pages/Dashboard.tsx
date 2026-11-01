@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Search, Copy, Pencil, Archive, Trash2, FileUp, Home, Settings as Cog, Upload, ArchiveRestore, Building2, Lock } from 'lucide-react';
+import { Plus, Search, Copy, Pencil, Archive, Trash2, FileUp, Home, Settings as Cog, Upload, ArchiveRestore, Building2, Lock, AlertTriangle, Download } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { deleteProject, listProjects, loadProject, saveProject, type ProjectMeta } from '../lib/db';
+import { deleteProject, listProjects, loadProject, loadRaw, saveProject, type ProjectMeta } from '../lib/db';
+import { downloadText } from '../lib/capture';
 import { newProject, sampleProject, uid } from '../lib/templates';
 import { parseProjectFile } from '../lib/migrate';
 import { Btn, Confirm, Field, Modal, TextInput, inputCls } from '../components/ui';
@@ -53,7 +54,16 @@ export default function Dashboard() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => setItems(await listProjects());
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    // Finish writing the project that was open, then drop the in-memory copy so the dashboard is the
+    // single source of truth; reopening always reads the latest stored version (rename/archive included).
+    void (async () => {
+      await useEditor.getState().flushSave();
+      setProject(null);
+      await refresh();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const create = async (p: Project, thenImport = false) => {
     await saveProject(p);
@@ -79,7 +89,7 @@ export default function Dashboard() {
   const importFile = async (f: File) => {
     try {
       if (f.size > 60 * 1024 * 1024) throw new Error('Project file is too large.');
-      const p = parseProjectFile(await f.text());
+      const p = parseProjectFile(await f.text()); // full validation happens before anything is written
       p.id = uid();
       p.updatedAt = Date.now();
       await saveProject(p);
@@ -144,7 +154,16 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {shown.map((p) => (
+              {shown.map((p) => p.damaged ? (
+                <article key={p.id} className="rounded-xl border border-red-500/40 bg-red-500/5 p-4">
+                  <div className="flex items-center gap-2 text-red-300"><AlertTriangle size={16} /><h3 className="truncate font-medium">{p.name}</h3></div>
+                  <p className="mt-1 text-xs text-stone-400">This stored project could not be read ({p.damaged}). Other projects are unaffected.</p>
+                  <div className="mt-3 flex gap-2">
+                    <Btn variant="outline" onClick={() => void loadRaw(p.id).then((raw) => downloadText(JSON.stringify(raw), `damaged-${p.id}.json`))}><Download size={14} /> Export raw data</Btn>
+                    <Btn variant="danger" onClick={() => setDeleting(p)}><Trash2 size={14} /> Delete</Btn>
+                  </div>
+                </article>
+              ) : (
                 <article key={p.id} className="group overflow-hidden rounded-xl border border-stone-800 bg-stone-900 hover:border-stone-600">
                   <button className="block aspect-[16/10] w-full bg-stone-800" onClick={() => navigate({ page: 'editor', id: p.id })} aria-label={`Open ${p.name}`}>
                     {p.thumbnail ? <img src={p.thumbnail} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-stone-600"><Building2 size={32} /></div>}

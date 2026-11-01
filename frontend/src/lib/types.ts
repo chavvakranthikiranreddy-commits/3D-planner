@@ -44,10 +44,14 @@ export interface Wall {
   materialId: string;
   /** Finish on side B; falls back to materialId. Lets shared walls carry a different paint in each room. */
   materialIdB?: string;
+  /** Per-room finish ranges along a face (metres from a). Overrides the face material inside [from, to]. */
+  spans?: WallSpan[];
   source: Source;
   /** 0..1 detection confidence; undefined = user-confirmed. */
   confidence?: number;
 }
+
+export interface WallSpan { side: 'A' | 'B'; from: number; to: number; materialId: string }
 
 export interface Opening {
   id: string;
@@ -117,10 +121,13 @@ export interface Scene {
   objects: SceneObject[];
   materials: Record<string, Material>;
   lighting: Lighting;
+  /** Blueprint underlay per floor. The image itself lives in Project.assets so undo/versions stay cheap. */
+  blueprints?: Record<string, BlueprintRef>;
 }
 
-export interface Blueprint {
-  dataUrl: string;
+/** Reference to a blueprint underlay stored in Project.assets[assetId]. */
+export interface BlueprintRef {
+  assetId: string;
   fileName: string;
   widthPx: number;
   heightPx: number;
@@ -131,8 +138,9 @@ export interface Blueprint {
   originY: number;
   opacity: number;
   visible: boolean;
-  floorId: string;
 }
+/** @deprecated v0.1 single-underlay shape, migrated to Scene.blueprints + Project.assets. */
+export interface LegacyBlueprint extends Omit<BlueprintRef, 'assetId'> { dataUrl: string; floorId: string }
 
 export interface DesignVersion {
   id: string;
@@ -154,7 +162,10 @@ export interface Project {
   updatedAt: number;
   thumbnail?: string;
   scene: Scene;
-  blueprint?: Blueprint;
+  /** Large binary assets (blueprint images) by id — not part of undo history. */
+  assets: Record<string, string>;
+  /** @deprecated migrated on load */
+  blueprint?: LegacyBlueprint;
   versions: DesignVersion[];
 }
 

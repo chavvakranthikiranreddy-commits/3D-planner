@@ -4,7 +4,7 @@ import { useEditor } from '../../store/editor';
 import { Badge, Btn, Empty, Field, NumField, Section, inputCls } from '../ui';
 import { STYLES, type AssetStyle } from '../../lib/catalog';
 import { applyChanges, localProvider, remoteProvider, type Proposal } from '../../lib/ai';
-import { runJob } from '../../lib/jobs';
+import { ensureActive, runJob } from '../../lib/jobs';
 import { thumbnail } from '../../lib/capture';
 import { uid } from '../../lib/templates';
 
@@ -32,9 +32,11 @@ export default function AIPanel() {
   const generate = () => {
     const prov = provider === 'remote' && settings.backendUrl ? remoteProvider(settings.backendUrl, settings.apiToken) : localProvider;
     setProposal(null);
-    const id = runJob('ai', `AI proposal · ${s.rooms.find((r) => r.id === roomId)?.name}`, async (progress) => {
+    const pid = project.id;
+    const id = runJob('ai', `AI proposal · ${s.rooms.find((r) => r.id === roomId)?.name}`, async (progress, signal) => {
       progress(0.2);
-      const p = await prov.propose(useEditor.getState().project!.scene, { roomId, style, prompt, budget: budget || undefined, replaceFurniture: replace });
+      const p = await prov.propose(useEditor.getState().project!.scene, { roomId, style, prompt, budget: budget || undefined, replaceFurniture: replace }, signal);
+      ensureActive(signal, pid); // ignore results for a cancelled job or a different project
       progress(0.9);
       setProposal(p);
       setChecked(new Set(p.changes.map((c) => c.id)));

@@ -13,10 +13,10 @@ from ..security import current_user
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
-def _scene_ok(scene: dict) -> int:
-    if not isinstance(scene.get("walls"), list) or not isinstance(scene.get("floors"), list):
-        raise HTTPException(422, "scene must contain 'floors' and 'walls' arrays")
-    return int(scene.get("schemaVersion", 1))
+def _dump(scene) -> tuple[dict, int]:
+    """Scene is already validated by pydantic (422 on any problem); store the full document."""
+    d = scene.model_dump(mode="json")
+    return d, int(d["schemaVersion"])
 
 
 def _owned(db: Session, pid: str, user: str) -> Project:
@@ -33,7 +33,8 @@ def list_projects(db: Session = Depends(get_db), user: str = Depends(current_use
 
 @router.post("", response_model=ProjectFull, status_code=201)
 def create_project(body: ProjectIn, db: Session = Depends(get_db), user: str = Depends(current_user)):
-    p = Project(owner_id=user, name=body.name, project_type=body.project_type, units=body.units, scene=body.scene, scene_schema_version=_scene_ok(body.scene))
+    scene, ver = _dump(body.scene)
+    p = Project(owner_id=user, name=body.name, project_type=body.project_type, units=body.units, scene=scene, scene_schema_version=ver)
     db.add(p)
     db.commit()
     return p
@@ -52,8 +53,7 @@ def update_project(pid: str, body: ProjectPatch, db: Session = Depends(get_db), 
     if body.status is not None:
         p.status = body.status
     if body.scene is not None:
-        p.scene_schema_version = _scene_ok(body.scene)
-        p.scene = body.scene
+        p.scene, p.scene_schema_version = _dump(body.scene)
     db.commit()
     return p
 

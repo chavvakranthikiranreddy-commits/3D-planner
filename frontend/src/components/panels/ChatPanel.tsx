@@ -5,7 +5,11 @@ import { HELP, runCommand, type ChatImage, type ChatOutcome } from '../../lib/ch
 import { extractPalette, loadImage, MAX_UPLOAD_BYTES, readAsDataUrl, removeBackground, sniffType, toCanvas, trimTransparent } from '../../lib/image';
 import { uid } from '../../lib/templates';
 
-export interface ChatMsg { id: string; role: 'user' | 'assistant'; text: string; image?: string; ok?: boolean; undoable?: boolean; suggestions?: string[] }
+export interface ChatMsg {
+  id: string; role: 'user' | 'assistant'; text: string; image?: string; ok?: boolean; suggestions?: string[];
+  /** Undo-history depth right after this message's edit; its Undo is only offered while it is still the latest change. */
+  undoAt?: number;
+}
 
 /** Prepare an attached photo: downscale, try background removal, sample a palette. */
 async function prepareImage(file: File): Promise<ChatImage> {
@@ -48,6 +52,8 @@ export default function ChatPanel() {
   const [pending, setPending] = useState<ChatImage | null>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<ChatOutcome | null>(null);
+  const historyDepth = useEditor((s) => s.past.length);
   const listRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -67,11 +73,12 @@ export default function ChatPanel() {
 
   const apply = (out: ChatOutcome) => {
     const st = useEditor.getState();
+    if (out.confirm) setPendingConfirm(out.confirm);
     if (out.edit) st.mutate(out.edit);
     if (out.select) useEditor.setState({ selection: out.select });
     if (out.view) st.setView(out.view);
     if (out.camera) st.setCamPreset(out.camera);
-    push({ role: 'assistant', text: out.reply, ok: out.ok, undoable: !!out.edit, suggestions: out.suggestions });
+    push({ role: 'assistant', text: out.reply, ok: out.ok, undoAt: out.edit ? useEditor.getState().past.length : undefined, suggestions: out.suggestions });
   };
 
   const send = async (raw?: string) => {
@@ -80,6 +87,12 @@ export default function ChatPanel() {
     const img = pending;
     push({ role: 'user', text: msg, image: img?.dataUrl });
     setText('');
+    if (pendingConfirm) {
+      const c = pendingConfirm;
+      setPendingConfirm(null);
+      if (/^(y|yes|yeah|yep|ok|okay|confirm|sure|do it|go ahead)\b/i.test(msg)) { apply(c); return; }
+      if (/^(n|no|nope|cancel|stop|don'?t)\b/i.test(msg)) { push({ role: 'assistant', text: 'Cancelled — nothing was changed.' }); return; }
+    }
     const st = useEditor.getState();
     const out = runCommand(msg, { scene: st.project!.scene, selection: st.selection, floorId: st.activeFloorId, image: img, units: st.project!.units });
     if (out.usedImage) setPending(null);
@@ -103,11 +116,13 @@ export default function ChatPanel() {
             <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${m.role === 'user' ? 'rounded-br-sm bg-amber-500 text-stone-950' : m.ok === false ? 'rounded-bl-sm border border-amber-500/40 bg-stone-800 text-stone-200' : 'rounded-bl-sm bg-stone-800 text-stone-200'}`}>
               {m.image && <img src={m.image} alt="Attached" className="mb-1.5 max-h-32 rounded-lg bg-white/90 object-contain" />}
               {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
-              {m.undoable && (
+              {m.undoAt !== undefined && (m.undoAt === historyDepth ? (
                 <button className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-amber-300 hover:underline" onClick={() => { useEditor.getState().undo(); push({ role: 'assistant', text: 'Undone.' }); }}>
-                  <Undo2 size={11} /> Undo
+                  <Undo2 size={11} /> Undo this change
                 </button>
-              )}
+              ) : m.undoAt < historyDepth ? (
+                <span className="mt-1.5 block text-[10px] text-stone-500">Newer changes were made since — use the main Undo (Ctrl+Z) to step back.</span>
+              ) : null)}
               {m.suggestions && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {m.suggestions.map((s) => <button key={s} onClick={() => setText(s)} className="rounded-full border border-stone-600 px-2 py-0.5 text-[11px] text-stone-300 hover:border-amber-500 hover:text-amber-200">{s}</button>)}

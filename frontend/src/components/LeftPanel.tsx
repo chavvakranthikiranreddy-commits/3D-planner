@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Eye, EyeOff, Layers } from 'lucide-react';
-import { useEditor } from '../store/editor';
+import { useEditor, blueprintFor } from '../store/editor';
 import { fmtArea, fmtLen, polygonArea, validateGeometry, wallLength } from '../lib/geometry';
 import { Badge } from './ui';
 
@@ -21,7 +21,7 @@ export default function LeftPanel() {
   const selection = useEditor((s) => s.selection);
   const activeFloorId = useEditor((s) => s.activeFloorId);
   const showBlueprint = useEditor((s) => s.showBlueprint);
-  const { select, setActiveFloor, toggle, updateProject } = useEditor.getState();
+  const { select, setActiveFloor, toggle, mutate } = useEditor.getState();
   const s = project.scene;
   const u = project.units;
   const walls = s.walls.filter((w) => w.floorId === activeFloorId);
@@ -33,7 +33,7 @@ export default function LeftPanel() {
   const item = (active: boolean, onClick: () => void, children: React.ReactNode, key: string) => (
     <button key={key} onClick={onClick} className={`flex w-full items-center gap-2 px-4 py-1 text-left text-[13px] ${active ? 'bg-amber-500/15 text-amber-200' : 'text-stone-300 hover:bg-stone-800'}`}>{children}</button>
   );
-  const bp = project.blueprint;
+  const bp = blueprintFor(project, activeFloorId);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -46,7 +46,7 @@ export default function LeftPanel() {
           <div className="mt-2 flex items-center gap-2 text-xs text-stone-400">
             <button onClick={() => toggle('showBlueprint')} className="flex items-center gap-1 hover:text-white">{showBlueprint ? <Eye size={13} /> : <EyeOff size={13} />} Blueprint</button>
             <input type="range" min={0.05} max={1} step={0.05} value={bp.opacity} aria-label="Blueprint opacity"
-              onChange={(e) => updateProject((p) => { p.blueprint = { ...p.blueprint!, opacity: +e.target.value }; })} className="flex-1 accent-amber-500" />
+              onChange={(e) => { const v = +e.target.value; mutate((s) => { const b = s.blueprints?.[activeFloorId]; if (b) b.opacity = v; }, 'bp-opacity'); }} className="flex-1 accent-amber-500" />
           </div>
         )}
       </div>

@@ -66,12 +66,14 @@ def detect(gray: np.ndarray, px_per_meter: float | None = None, threshold: int |
     max_t = max(min_t + 4, round(max_dim * 0.04))
 
     if threshold is None:
-        thr, ink = cv2.threshold(gray, 0, 1, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+        thr, _ = cv2.threshold(gray, 0, 1, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
         thr = min(float(thr), 170.0)
-        ink = (gray < thr).astype(np.uint8)
     else:
         thr = float(threshold)
-        ink = (gray < thr).astype(np.uint8)
+    # inclusive: Otsu returns 0 for pure black-on-white drawings
+    ink = (gray <= thr).astype(np.uint8)
+    if ink.mean() > 0.5:  # light lines on a dark sheet
+        ink = 1 - ink
 
     walls: list[Wall] = []
     wid = 0
@@ -200,7 +202,7 @@ def _rooms(walls: list[Wall], W: int, H: int, ppm: float | None) -> list[dict]:
     free = (mask == 0).astype(np.uint8)
     ff = np.zeros((H + 4, W + 4), np.uint8)
     cv2.floodFill(free, ff, (0, 0), 0)  # remove exterior
-    n, _, stats, _ = cv2.connectedComponentsWithStats(free, connectivity=4)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(free, connectivity=4)
     min_area = 1.5 * ppm * ppm if ppm else (W * H) / 400
     rooms = []
     for i in range(1, n):
@@ -208,8 +210,20 @@ def _rooms(walls: list[Wall], W: int, H: int, ppm: float | None) -> list[dict]:
         if area < min_area:
             continue
         rect = area / float(w * h)
+        # trace the real outline so L-shaped rooms keep their concave corners
+        comp = (labels == i).astype(np.uint8)
+        contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        poly: list[dict] = []
+        if contours:
+            c = max(contours, key=cv2.contourArea)
+            approx = cv2.approxPolyDP(c, 2.0, True)
+            poly = [{"x": float(p[0][0] - 1), "y": float(p[0][1] - 1)} for p in approx]
+        if len(poly) < 3:
+            poly = [{"x": float(x - 1), "y": float(y - 1)}, {"x": float(x + w - 1), "y": float(y - 1)},
+                    {"x": float(x + w - 1), "y": float(y + h - 1)}, {"x": float(x - 1), "y": float(y + h - 1)}]
         rooms.append({"x0": float(x - 1), "y0": float(y - 1), "x1": float(x + w - 1), "y1": float(y + h - 1),
-                      "areaPx": float(area), "confidence": round(0.4 + 0.5 * rect, 2)})
+                      "areaPx": float(area), "confidence": round(0.4 + 0.5 * rect, 2),
+                      "polygon": poly, "irregular": bool(len(poly) > 4 or rect < 0.97)})
     return rooms
 
 
@@ -227,4 +241,7 @@ def scale_result(res: dict, k: float) -> dict:
         for key in ("x0", "y0", "x1", "y1"):
             r[key] *= k
         r["areaPx"] *= k * k
+        for p in r.get("polygon", []):
+            p["x"] *= k
+            p["y"] *= k
     return res

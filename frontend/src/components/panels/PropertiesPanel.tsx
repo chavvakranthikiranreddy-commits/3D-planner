@@ -1,7 +1,7 @@
-import { Copy, Trash2, Check, Plus, Scissors, AlertTriangle } from 'lucide-react';
+import { Copy, Trash2, Check, Plus, Scissors, AlertTriangle, Palette } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { Badge, Btn, Empty, Field, LenField, NumField, Section, TextInput, inputCls } from '../ui';
-import { fmtArea, fmtLen, polygonArea, polygonPerimeter, wallAngle, wallLength } from '../../lib/geometry';
+import { applyAttachments, attachmentsAt, fmtArea, fmtLen, pointInPolygon, polygonArea, polygonPerimeter, wallAngle, wallLength } from '../../lib/geometry';
 import { getAsset } from '../../lib/catalog';
 import { parseColorInput } from '../../lib/materials';
 import { uid } from '../../lib/templates';
@@ -39,7 +39,7 @@ export default function PropertiesPanel() {
                   <option value="m">Metric (m)</option><option value="ft">Imperial (ft-in)</option>
                 </select>
               </Field>
-              <Field label="Currency"><TextInput defaultValue={project.currency} maxLength={4} onBlur={(e) => updateProject((p) => { p.currency = e.target.value || '₹'; })} /></Field>
+              <Field label="Currency symbol" hint="Label only — catalog prices are placeholders and are not converted."><TextInput defaultValue={project.currency} maxLength={4} onBlur={(e) => updateProject((p) => { p.currency = e.target.value || '₹'; })} /></Field>
             </div>
           </div>
         </Section>
@@ -48,8 +48,17 @@ export default function PropertiesPanel() {
             const top = [...sc.floors].sort((a, b) => b.level - a.level)[0];
             const f = { id: uid(), name: `Floor ${top.level + 1}`, level: top.level + 1, elevation: +(top.elevation + top.ceilingHeight + 0.2).toFixed(2), ceilingHeight: top.ceilingHeight };
             sc.floors.push(f);
-            // copy exterior walls up so floors align vertically
-            sc.walls.filter((w) => w.floorId === top.id && w.thickness >= 0.2).forEach((w) => sc.walls.push({ ...w, id: uid(), floorId: f.id, height: f.ceilingHeight, confidence: undefined }));
+            // copy exterior walls up so floors align vertically. Exterior = one face is outside every room
+            // (falls back to thickness when the floor has no rooms yet).
+            const rooms = sc.rooms.filter((r) => r.floorId === top.id);
+            const outside = (p: { x: number; y: number }) => !rooms.some((r) => pointInPolygon(p, r.polygon));
+            const exterior = (w: (typeof sc.walls)[number]) => {
+              if (!rooms.length) return w.thickness >= 0.2;
+              const ang = wallAngle(w), mx = (w.a.x + w.b.x) / 2, my = (w.a.y + w.b.y) / 2, off = w.thickness / 2 + 0.2;
+              const n = { x: -Math.sin(ang) * off, y: Math.cos(ang) * off };
+              return outside({ x: mx + n.x, y: my + n.y }) || outside({ x: mx - n.x, y: my - n.y });
+            };
+            sc.walls.filter((w) => w.floorId === top.id && exterior(w)).forEach((w) => sc.walls.push({ ...w, id: uid(), floorId: f.id, height: f.ceilingHeight, confidence: undefined, spans: [] }));
           })}><Plus size={14} /> Floor</Btn>
         }>
           <div className="space-y-2">
@@ -87,6 +96,7 @@ export default function PropertiesPanel() {
               const bad = sorted.slice(1).filter((f, i) => f.elevation < sorted[i].elevation + sorted[i].ceilingHeight - 0.01);
               return bad.length ? <p className="flex items-center gap-1 text-xs text-amber-300"><AlertTriangle size={12} /> {bad.map((b) => b.name).join(', ')} overlaps the floor below.</p> : null;
             })()}
+            {s.floors.length > 1 && <p className="text-[11px] text-stone-500">Each floor can have its own imported plan. Stairs and moving between floors in the walkthrough are not supported yet — switch floors with the selector.</p>}
           </div>
         </Section>
         <Section title="Selection"><Empty>Select a wall, room, opening or item in the 2D plan or 3D view to edit it.</Empty></Section>
@@ -105,10 +115,19 @@ export default function PropertiesPanel() {
       <>
         <Section title="Wall" right={w.confidence !== undefined ? <Badge tone={w.confidence < 0.6 ? 'amber' : 'sky'}>detected {Math.round(w.confidence * 100)}%</Badge> : <Badge>{w.source}</Badge>}>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Length"><LenField meters={L} units={u} min={0.05} onCommit={(v) => upd((x) => { const a = wallAngle(x); x.b = { x: x.a.x + Math.cos(a) * v, y: x.a.y + Math.sin(a) * v }; })} /></Field>
+            <Field label="Length"><LenField meters={L} units={u} min={0.05} onCommit={(v) => mutate((sc) => {
+              // move end b together with every wall end / room corner attached to it
+              const x = sc.walls.find((q) => q.id === w.id); if (!x) return;
+              const a = wallAngle(x);
+              applyAttachments(sc, attachmentsAt(sc, x.floorId, x.b), { x: x.a.x + Math.cos(a) * v, y: x.a.y + Math.sin(a) * v });
+            })} /></Field>
             <Field label="Height"><LenField meters={w.height} units={u} min={1} onCommit={(v) => upd((x) => { x.height = v; })} /></Field>
             <Field label="Thickness"><LenField meters={w.thickness} units={u} min={0.03} max={1} onCommit={(v) => upd((x) => { x.thickness = v; })} /></Field>
-            <Field label="Angle"><NumField value={+((wallAngle(w) * 180) / Math.PI).toFixed(1)} step={1} suffix="°" onCommit={(v) => upd((x) => { const r = (v * Math.PI) / 180; x.b = { x: x.a.x + Math.cos(r) * L, y: x.a.y + Math.sin(r) * L }; })} /></Field>
+            <Field label="Angle"><NumField value={+((wallAngle(w) * 180) / Math.PI).toFixed(1)} step={1} suffix="°" onCommit={(v) => mutate((sc) => {
+              const x = sc.walls.find((q) => q.id === w.id); if (!x) return;
+              const r = (v * Math.PI) / 180;
+              applyAttachments(sc, attachmentsAt(sc, x.floorId, x.b), { x: x.a.x + Math.cos(r) * L, y: x.a.y + Math.sin(r) * L });
+            })} /></Field>
           </div>
           <button onClick={() => setRightTab('materials')} className="mt-3 flex w-full items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-sm hover:border-stone-500">
             <span className="h-6 w-6 rounded" style={{ background: m?.colorHex }} />
@@ -117,14 +136,24 @@ export default function PropertiesPanel() {
           </button>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {w.confidence !== undefined && <Btn variant="outline" onClick={() => upd((x) => { x.confidence = undefined; })}><Check size={14} /> Confirm</Btn>}
-            <Btn variant="outline" title="Split wall in the middle" onClick={() => mutate((sc) => {
-              const x = sc.walls.find((q) => q.id === w.id)!;
-              const mid = { x: (x.a.x + x.b.x) / 2, y: (x.a.y + x.b.y) / 2 };
-              const nw = { ...x, id: uid(), a: mid };
-              x.b = mid;
-              sc.walls.push(nw);
-              sc.openings.forEach((o) => { if (o.wallId === x.id && o.offset > L / 2) { o.wallId = nw.id; o.offset -= L / 2; } });
-            })}><Scissors size={14} /> Split</Btn>
+            <Btn variant="outline" title="Split wall (never through a door or window)" onClick={() => {
+              // pick the split point nearest the middle that is clear of every opening
+              const clear = (t: number) => t > 0.1 && t < L - 0.1 && ops.every((o) => Math.abs(o.offset - t) > o.width / 2 + 0.05);
+              let at = -1;
+              for (let k = 0; k <= L / 2; k += 0.05) { if (clear(L / 2 + k)) { at = L / 2 + k; break; } if (clear(L / 2 - k)) { at = L / 2 - k; break; } }
+              if (at < 0) { useEditor.getState().toast('There is no clear spot to split this wall — its doors and windows cover it.', 'error'); return; }
+              mutate((sc) => {
+                const x = sc.walls.find((q) => q.id === w.id)!;
+                const ang = wallAngle(x);
+                const p = { x: x.a.x + Math.cos(ang) * at, y: x.a.y + Math.sin(ang) * at };
+                const nw = { ...x, id: uid(), a: p, spans: (x.spans ?? []).filter((sp) => sp.to > at).map((sp) => ({ ...sp, from: Math.max(0, sp.from - at), to: sp.to - at })) };
+                x.b = p;
+                x.spans = (x.spans ?? []).filter((sp) => sp.from < at).map((sp) => ({ ...sp, to: Math.min(at, sp.to) }));
+                sc.walls.push(nw);
+                sc.openings.forEach((o) => { if (o.wallId === x.id && o.offset > at) { o.wallId = nw.id; o.offset -= at; } });
+              });
+              useEditor.getState().toast(`Split at ${fmtLen(at, u)} from the start`, 'success');
+            }}><Scissors size={14} /> Split</Btn>
             <Btn variant="outline" onClick={() => mutate((sc) => { sc.openings.push({ id: uid(), wallId: w.id, type: 'door', offset: L / 2, width: Math.min(0.9, L), height: 2.1, sill: 0, source: 'manual' }); })}><Plus size={14} /> Door</Btn>
             <Btn variant="outline" onClick={() => mutate((sc) => { sc.openings.push({ id: uid(), wallId: w.id, type: 'window', offset: L / 2, width: Math.min(1.2, L), height: 1.2, sill: 0.9, source: 'manual' }); })}><Plus size={14} /> Window</Btn>
             <Btn variant="danger" onClick={() => { mutate((sc) => { sc.walls = sc.walls.filter((q) => q.id !== w.id); sc.openings = sc.openings.filter((o) => o.wallId !== w.id); }); select(null); }}><Trash2 size={14} /> Delete</Btn>
@@ -190,11 +219,14 @@ export default function PropertiesPanel() {
             <div><div className="text-[11px] text-stone-500">Perimeter</div><div className="text-stone-100">{fmtLen(polygonPerimeter(r.polygon), u)}</div></div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setRightTab('materials')} className="flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
+            <button onClick={() => setRightTab('materials', 'floor')} className="flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
               <span className="h-5 w-5 rounded" style={{ background: s.materials[r.floorMaterialId]?.colorHex }} /> Floor
             </button>
-            <button onClick={() => setRightTab('materials')} className="flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
+            <button onClick={() => setRightTab('materials', 'ceiling')} className="flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
               <span className="h-5 w-5 rounded" style={{ background: s.materials[r.ceilingMaterialId]?.colorHex }} /> Ceiling
+            </button>
+            <button onClick={() => setRightTab('materials', 'room-walls')} className="col-span-2 flex items-center gap-2 rounded-md border border-stone-700 p-2 text-left text-xs hover:border-stone-500">
+              <Palette size={14} /> Paint this room's walls
             </button>
           </div>
           <p className="text-[11px] text-stone-500">Drag the room or its corner handles in the 2D plan to reshape it.</p>
@@ -232,8 +264,8 @@ export default function PropertiesPanel() {
             <Field label="Above floor"><LenField meters={o.elevation} units={u} min={0} onCommit={(v) => upd((x) => { x.elevation = v; })} /></Field>
             <Field label="Rotation"><NumField value={+(((o.rotation * 180) / Math.PI) % 360).toFixed(1)} step={15} suffix="°" onCommit={(v) => upd((x) => { x.rotation = (v * Math.PI) / 180; })} /></Field>
           </div>
-          <Field label="Colour (HEX / RGB)"><ColorInput value={o.colorHex} onCommit={(h) => upd((x) => { x.colorHex = h; x.materialId = undefined; })} /></Field>
-          {o.accentHex && <Field label="Accent colour"><ColorInput value={o.accentHex} onCommit={(h) => upd((x) => { x.accentHex = h; })} /></Field>}
+          <Field group label="Colour (HEX / RGB)"><ColorInput value={o.colorHex} onCommit={(h) => upd((x) => { x.colorHex = h; x.materialId = undefined; })} /></Field>
+          {o.accentHex && <Field group label="Accent colour"><ColorInput value={o.accentHex} onCommit={(h) => upd((x) => { x.accentHex = h; })} /></Field>}
           <Field label={`Price (${project.currency}, indicative)`}><NumField value={o.price ?? 0} step={100} min={0} onCommit={(v) => upd((x) => { x.price = v; })} /></Field>
           {asset && <p className="text-[11px] leading-snug text-stone-500">Source: {o.estimated ? 'your reference image (approximate geometry)' : asset.source} · Licence: {asset.licence}</p>}
           <div className="flex flex-wrap gap-1.5 pt-1">

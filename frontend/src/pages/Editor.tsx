@@ -43,7 +43,7 @@ const TABS: { id: RightTab; icon: typeof Palette; label: string }[] = [
 function SaveIndicator() {
   const st = useEditor((s) => s.saveState);
   const map = {
-    saved: [<Check key="i" size={13} />, 'Saved', 'text-emerald-400'],
+    saved: [<Check key="i" size={13} />, 'Saved on this device', 'text-emerald-400'],
     saving: [<Loader2 key="i" size={13} className="animate-spin" />, 'Saving…', 'text-stone-400'],
     unsaved: [<Loader2 key="i" size={13} className="animate-spin" />, 'Unsaved', 'text-stone-400'],
     error: [<AlertCircle key="i" size={13} />, 'Save failed', 'text-red-400'],
@@ -66,9 +66,54 @@ function Shortcuts({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** First-run checklist: plain-language next steps with one-click actions. */
+function GettingStarted() {
+  const show = useEditor((s) => s.showGuide);
+  const walking = useEditor((s) => s.view === 'walk');
+  const project = useEditor((s) => s.project)!;
+  const exported = useEditor((s) => s.jobs.some((j) => j.status === 'succeeded' && (j.type === 'render' || j.type === 'report')));
+  const [min, setMin] = useState(() => window.innerWidth < 768);
+  if (!show || walking) return null;
+  const sc = project.scene;
+  const toReview = sc.walls.filter((w) => w.confidence !== undefined).length + sc.openings.filter((o) => o.confidence !== undefined).length + sc.rooms.filter((r) => r.source === 'detected').length;
+  const named = sc.rooms.length > 0 && sc.rooms.every((r) => r.roomType !== 'other' || !/^Room \d+$/.test(r.name));
+  const painted = Object.keys(sc.materials).some((k) => k.startsWith('custom-') || k.startsWith('ai-')) || sc.walls.some((w) => (w.spans?.length ?? 0) > 0 || w.materialId !== 'paint-white');
+  const st = useEditor.getState();
+  const steps: { done: boolean; label: string; action: () => void }[] = [
+    { done: sc.walls.length > 0, label: sc.walls.length ? 'Plan is in place' : 'Import a floor plan or draw walls', action: () => st.navigate({ page: 'import', id: project.id }) },
+    { done: toReview === 0 && sc.walls.length > 0, label: toReview ? `Check ${toReview} highlighted item(s)` : 'Detected items checked', action: () => { st.setView('split'); st.setRightTab('properties'); } },
+    { done: named, label: 'Name your rooms (bedroom, kitchen…)', action: () => { st.setRightTab('chat'); } },
+    { done: painted, label: 'Change a wall colour', action: () => { st.setRightTab('chat'); } },
+    { done: sc.objects.length > 0, label: 'Add furniture', action: () => st.setRightTab('catalog') },
+    { done: exported, label: 'Download an image or report', action: () => st.setRightTab('export') },
+  ];
+  const left = steps.filter((x) => !x.done).length;
+  return (
+    <div className="pointer-events-auto fixed bottom-4 left-4 z-30 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-stone-700 bg-stone-900/95 shadow-2xl backdrop-blur">
+      <div className="flex items-center justify-between px-3 py-2">
+        <button className="text-sm font-semibold text-stone-100" onClick={() => setMin(!min)} aria-expanded={!min}>Getting started · {left ? `${left} to go` : 'all done 🎉'}</button>
+        <button className="text-xs text-stone-500 hover:text-white" onClick={() => st.toggle('showGuide')} aria-label="Hide getting started">Hide</button>
+      </div>
+      {!min && (
+        <ul className="space-y-0.5 px-2 pb-2">
+          {steps.map((x) => (
+            <li key={x.label}><button onClick={x.action} className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] ${x.done ? 'text-stone-500 line-through' : 'text-stone-200 hover:bg-stone-800'}`}>
+              <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${x.done ? 'border-emerald-500 bg-emerald-500 text-stone-950' : 'border-stone-500'}`}>{x.done ? '✓' : ''}</span>{x.label}
+            </button></li>
+          ))}
+          <li className="px-2 pt-1 text-[11px] text-stone-500">Tip: the Design chat understands “room 2 is a bedroom” and “paint the hall #C46A4A”.</li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function Editor() {
   const project = useEditor((s) => s.project);
-  const { tool, view, rightTab, gridSnap, past, future, selection } = useEditor();
+  const tool = useEditor((s) => s.tool), view = useEditor((s) => s.view), rightTab = useEditor((s) => s.rightTab);
+  const gridSnap = useEditor((s) => s.gridSnap), selection = useEditor((s) => s.selection);
+  const canUndo = useEditor((s) => s.past.length > 0), canRedo = useEditor((s) => s.future.length > 0);
+  const activeFloorId = useEditor((s) => s.activeFloorId);
   const { setTool, setView, setRightTab, toggle, undo, redo, navigate, mutate, select, updateProject, flushSave, toast } = useEditor.getState();
   const [showLeft, setShowLeft] = useState(() => window.innerWidth >= 1024);
   const [showRight, setShowRight] = useState(() => window.innerWidth >= 768);
@@ -141,7 +186,7 @@ export default function Editor() {
   }, [undo, redo, mutate, select, setTool, setView, toggle, flushSave, toast]);
 
   if (!project) return null;
-  const hasBp = !!project.blueprint;
+  const hasBp = !!project.scene.blueprints?.[activeFloorId];
 
   const panel = {
     chat: <ChatPanel />, properties: <PropertiesPanel />, materials: <MaterialsPanel />, catalog: <CatalogPanel />, product: <ProductPanel />,
@@ -161,8 +206,13 @@ export default function Editor() {
         </div>
         <SaveIndicator />
         <div className="mx-2 h-6 w-px bg-stone-800" />
-        <Btn title="Undo (Ctrl+Z)" onClick={undo} disabled={!past.length}><Undo2 size={16} /></Btn>
-        <Btn title="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!future.length}><Redo2 size={16} /></Btn>
+        <Btn title="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo}><Undo2 size={16} /></Btn>
+        <Btn title="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo}><Redo2 size={16} /></Btn>
+        {project.scene.floors.length > 1 && (
+          <select aria-label="Floor" value={activeFloorId} onChange={(e) => useEditor.getState().setActiveFloor(e.target.value)} className="ml-1 rounded-md border border-stone-700 bg-stone-900 px-1.5 py-1 text-xs text-stone-200 md:hidden">
+            {[...project.scene.floors].sort((a, b) => a.level - b.level).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        )}
         <div className="mx-2 hidden h-6 w-px bg-stone-800 sm:block" />
         <div className="hidden items-center gap-0.5 sm:flex">
           {TOOLS.map((t) => (
@@ -172,7 +222,7 @@ export default function Editor() {
           <Btn title="Snapping (G)" active={gridSnap} onClick={() => toggle('gridSnap')}><Magnet size={16} /></Btn>
         </div>
         <div className="flex-1" />
-        <div className="flex overflow-hidden rounded-md border border-stone-700">
+        <div className="flex shrink-0 overflow-hidden rounded-md border border-stone-700">
           {VIEWS.map((v, i) => (
             <button key={v.id} title={`${v.label} (${i + 1})`} aria-label={v.label} onClick={() => setView(v.id)}
               className={`flex items-center gap-1 px-2 py-1 text-xs ${view === v.id ? 'bg-amber-500 text-stone-950' : 'text-stone-300 hover:bg-stone-800'} ${v.id === 'split' ? 'hidden md:flex' : 'flex'}`}>
@@ -215,14 +265,15 @@ export default function Editor() {
             </div>
           </aside>
         )}
-        {/* mobile tool strip */}
-        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-full bg-stone-900/95 p-1 shadow-lg sm:hidden">
+        {/* mobile tool strip (not in walkthrough, where the walk controls live) */}
+        <div className={`absolute bottom-3 left-1/2 z-10 -translate-x-1/2 gap-1 rounded-full bg-stone-900/95 p-1 shadow-lg sm:hidden ${view === 'walk' ? 'hidden' : 'flex'}`}>
           {TOOLS.slice(0, 5).map((t) => (
             <button key={t.id} aria-label={t.label} onClick={() => { setTool(t.id); setView('2d'); }} className={`rounded-full p-2 ${tool === t.id ? 'bg-amber-500 text-stone-950' : 'text-stone-300'}`}><t.icon size={16} /></button>
           ))}
         </div>
       </div>
       {help && <Shortcuts onClose={() => setHelp(false)} />}
+      <GettingStarted />
     </div>
   );
 }

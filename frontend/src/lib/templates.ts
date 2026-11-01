@@ -28,7 +28,7 @@ export function newProject(name: string, opts: Partial<Pick<Project, 'units' | '
   const now = Date.now();
   return {
     id: uid(), name, projectType: opts.projectType ?? 'apartment', units: (opts.units ?? 'm') as Units,
-    currency: opts.currency ?? '₹', status: 'active', createdAt: now, updatedAt: now, scene, versions: [],
+    currency: opts.currency ?? '₹', status: 'active', createdAt: now, updatedAt: now, scene, versions: [], assets: {},
   };
 }
 

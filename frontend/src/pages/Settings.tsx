@@ -10,13 +10,26 @@ export default function Settings() {
   const [wipe, setWipe] = useState(false);
   const [health, setHealth] = useState<string | null>(null);
 
+  /** Distinguish: unreachable / reachable but token rejected / fully authorised (+ AI readiness). */
   const test = async () => {
     setHealth('Checking…');
+    const base = settings.backendUrl.replace(/\/$/, '');
+    let h: { version?: string; ai_provider?: string | null; auth?: boolean };
     try {
-      const r = await fetch(`${settings.backendUrl.replace(/\/$/, '')}/api/health`, { headers: settings.apiToken ? { Authorization: `Bearer ${settings.apiToken}` } : {} });
-      const j = await r.json();
-      setHealth(r.ok ? `Connected · API v${j.version} · AI provider: ${j.ai_provider ?? 'none'}` : `Error ${r.status}`);
-    } catch { setHealth('Could not reach the server (check the URL and CORS settings).'); }
+      const r = await fetch(`${base}/api/health`);
+      if (!r.ok) { setHealth(`Server responded with error ${r.status}.`); return; }
+      h = await r.json();
+    } catch {
+      setHealth(`Could not reach ${base}. Check the URL, that the server is running, and that its CORS_ORIGINS includes ${location.origin}.`);
+      return;
+    }
+    try {
+      const r = await fetch(`${base}/api/auth/check`, { headers: settings.apiToken ? { Authorization: `Bearer ${settings.apiToken}` } : {} });
+      if (r.status === 401) { setHealth(`Reachable (API v${h.version}), but the API token was rejected.`); return; }
+      if (!r.ok) { setHealth(`Reachable, but the auth check failed (${r.status}).`); return; }
+      const a = await r.json();
+      setHealth(`Connected as “${a.user}” · API v${h.version} · ${h.auth ? 'token verified' : 'server has no authentication (local mode)'} · AI provider: ${h.ai_provider ?? 'not configured'}`);
+    } catch { setHealth('Reachable, but the authorised request failed (check CORS settings).'); }
   };
 
   return (
@@ -40,7 +53,7 @@ export default function Settings() {
         </section>
         <section>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-stone-400"><Server size={14} /> Optional processing server</h2>
-          <p className="mb-3 text-sm text-stone-400">Archiform works fully in the browser. Connect the FastAPI backend from this repository for OpenCV blueprint detection, server-side AI providers (API keys stay on the server) and cloud project storage.</p>
+          <p className="mb-3 text-sm text-stone-400">Archiform works fully in the browser. Connecting the FastAPI backend from this repository adds OpenCV blueprint detection and server-side AI providers (API keys stay on the server). Projects are still saved on this device — the app does not sync projects to the server yet.</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Backend URL"><TextInput defaultValue={settings.backendUrl} placeholder="http://localhost:8000" onBlur={(e) => setSettings({ backendUrl: e.target.value.trim() })} /></Field>
             <Field label="API token"><TextInput type="password" defaultValue={settings.apiToken} placeholder="matches API_TOKEN on the server" onBlur={(e) => setSettings({ apiToken: e.target.value.trim() })} /></Field>

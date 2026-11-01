@@ -11,11 +11,13 @@ const P = 'archiform:project:';
 export interface ProjectMeta {
   id: string; name: string; projectType: Project['projectType']; status: Project['status'];
   updatedAt: number; createdAt: number; thumbnail?: string; rooms: number; walls: number; versions: number;
+  /** Set when the stored record could not be read; the dashboard offers export/delete instead of crashing. */
+  damaged?: string;
 }
 
 export const toMeta = (p: Project): ProjectMeta => ({
   id: p.id, name: p.name, projectType: p.projectType, status: p.status, updatedAt: p.updatedAt, createdAt: p.createdAt,
-  thumbnail: p.thumbnail, rooms: p.scene.rooms.length, walls: p.scene.walls.length, versions: p.versions.length,
+  thumbnail: p.thumbnail, rooms: p.scene.rooms?.length ?? 0, walls: p.scene.walls?.length ?? 0, versions: p.versions?.length ?? 0,
 });
 
 export async function saveProject(p: Project) {
@@ -23,7 +25,10 @@ export async function saveProject(p: Project) {
 }
 export async function loadProject(id: string): Promise<Project | undefined> {
   const p = await get<Project>(P + id);
-  return p ? migrateProject(p) : undefined;
+  return p ? migrateProject(p) : undefined; // throws ProjectValidationError for damaged records
+}
+export async function loadRaw(id: string): Promise<unknown> {
+  return get(P + id);
 }
 export async function deleteProject(id: string) {
   await del(P + id);
@@ -32,8 +37,15 @@ export async function listProjects(): Promise<ProjectMeta[]> {
   const ks = (await keys()).filter((k) => typeof k === 'string' && k.startsWith(P)) as string[];
   const out: ProjectMeta[] = [];
   for (const k of ks) {
-    const p = await get<Project>(k);
-    if (p) out.push(toMeta(p));
+    const raw = await get<Project>(k).catch(() => undefined);
+    const id = k.slice(P.length);
+    try {
+      if (!raw) throw new Error('empty record');
+      out.push(toMeta(migrateProject(raw)));
+    } catch (e) {
+      // isolate the bad record so every other project still lists
+      out.push({ id, name: (raw as { name?: string } | undefined)?.name ?? 'Unreadable project', projectType: 'other', status: 'active', updatedAt: 0, createdAt: 0, rooms: 0, walls: 0, versions: 0, damaged: (e as Error).message });
+    }
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }

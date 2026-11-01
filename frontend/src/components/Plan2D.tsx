@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useEditor } from '../store/editor';
+import { useEditor, blueprintFor } from '../store/editor';
 import type { Pt, Wall } from '../lib/types';
-import { bbox, centroid, dist, fmtArea, fmtLen, orthoAssist, polygonArea, projectOnSegment, snapPt, snapToEndpoints, wallAngle, wallLength } from '../lib/geometry';
+import { applyAttachments, attachmentsAt, bbox, centroid, dist, fmtArea, fmtLen, orthoAssist, polygonArea, projectOnSegment, snapPt, snapToEndpoints, wallAngle, wallLength, type Attachments } from '../lib/geometry';
 import { makeRoom, makeWall, uid } from '../lib/templates';
 
 type Drag =
   | { type: 'pan'; sx: number; sy: number; ox: number; oy: number }
   | { type: 'object'; id: string; dx: number; dy: number }
-  | { type: 'wallEnd'; id: string; end: 'a' | 'b' }
-  | { type: 'wall'; id: string; start: Pt; a: Pt; b: Pt }
+  | { type: 'wallEnd'; id: string; end: 'a' | 'b'; att: Attachments }
+  | { type: 'wall'; id: string; start: Pt; a: Pt; b: Pt; attA: Attachments; attB: Attachments }
   | { type: 'roomVertex'; id: string; index: number }
   | { type: 'room'; id: string; start: Pt; poly: Pt[] }
   | { type: 'opening'; id: string }
@@ -20,8 +20,9 @@ export default function Plan2D() {
   const project = useEditor((s) => s.project)!;
   const scene = project.scene;
   const units = project.units;
-  const { tool, selection, activeFloorId, gridSnap, showBlueprint, settings } = useEditor();
-  const { mutate, select, setTool, updateProject, toast } = useEditor.getState();
+  const tool = useEditor((st) => st.tool), selection = useEditor((st) => st.selection), activeFloorId = useEditor((st) => st.activeFloorId);
+  const gridSnap = useEditor((st) => st.gridSnap), showBlueprint = useEditor((st) => st.showBlueprint), settings = useEditor((st) => st.settings);
+  const { mutate, select, setTool, toast } = useEditor.getState();
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState({ zoom: 50, ox: 40, oy: 40 }); // zoom = px per metre
   const [cursor, setCursor] = useState<Pt | null>(null);
@@ -36,7 +37,7 @@ export default function Plan2D() {
   const objects = scene.objects.filter((o) => o.floorId === floor.id);
   const below = scene.floors.find((f) => f.level === floor.level - 1);
   const ghostWalls = below ? scene.walls.filter((w) => w.floorId === below.id) : [];
-  const bp = project.blueprint && project.blueprint.floorId === floor.id ? project.blueprint : undefined;
+  const bp = blueprintFor(project, floor.id);
   const bpScale = bp?.pxPerMeter ?? 100;
 
   useEffect(() => {
@@ -109,7 +110,19 @@ export default function Plan2D() {
     return best;
   };
 
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d: number; zoom: number; ox: number; oy: number; mx: number; my: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.current.size === 2) {
+        const [a, b] = [...touches.current.values()];
+        const r = svgRef.current!.getBoundingClientRect();
+        pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: view.zoom, ox: view.ox, oy: view.oy, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top };
+        drag.current = null;
+        return;
+      }
+    }
     const p = toPlan(e);
     (e.target as Element).setPointerCapture?.(e.pointerId);
     if (e.button === 1 || tool === 'pan' || e.altKey) {
@@ -153,7 +166,7 @@ export default function Plan2D() {
         const real = v ? parseFloat(v) : NaN;
         if (real > 0 && bp) {
           const meters = units === 'ft' ? real / 3.28084 : real;
-          updateProject((pr) => { pr.blueprint = { ...pr.blueprint!, pxPerMeter: pxDist / meters }; });
+          mutate((s) => { const b = s.blueprints?.[floor.id]; if (b) b.pxPerMeter = pxDist / meters; });
           toast('Blueprint scale calibrated', 'success');
           setTool('select');
         }
@@ -167,6 +180,19 @@ export default function Plan2D() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch' && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pc = pinch.current;
+      if (pc && touches.current.size === 2) {
+        const [a, b] = [...touches.current.values()];
+        const r = svgRef.current!.getBoundingClientRect();
+        const zoom = Math.max(5, Math.min(600, pc.zoom * Math.hypot(a.x - b.x, a.y - b.y) / Math.max(1, pc.d)));
+        const k = zoom / pc.zoom;
+        const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+        setView({ zoom, ox: mx - (pc.mx - pc.ox) * k, oy: my - (pc.my - pc.oy) * k });
+        return;
+      }
+    }
     const p = toPlan(e);
     setCursor(tool === 'wall' || tool === 'room' ? snapIt(p, draft[draft.length - 1]) : p);
     const d = drag.current;
@@ -177,15 +203,17 @@ export default function Plan2D() {
       const q = g({ x: p.x - d.dx, y: p.y - d.dy });
       mutate((s) => { const o = s.objects.find((x) => x.id === d.id); if (o) { o.x = q.x; o.y = q.y; } }, 'drag:' + d.id);
     } else if (d.type === 'wallEnd') {
-      const others = walls.filter((w) => w.id !== d.id);
+      // connected wall ends and room corners move together (captured at drag start), so walls stay joined
+      const attachedIds = new Set(d.att.walls.map((x) => x.id));
+      const others = walls.filter((w) => !attachedIds.has(w.id));
       let q = snapToEndpoints(p, others, 12 / view.zoom);
       if (q === p) q = g(p);
-      mutate((s) => { const w = s.walls.find((x) => x.id === d.id); if (w) w[d.end] = q; }, 'drag:' + d.id + d.end);
+      mutate((s) => applyAttachments(s, d.att, q), 'drag:' + d.id + d.end);
     } else if (d.type === 'wall') {
       const off = g({ x: p.x - d.start.x, y: p.y - d.start.y });
       mutate((s) => {
-        const w = s.walls.find((x) => x.id === d.id);
-        if (w) { w.a = { x: d.a.x + off.x, y: d.a.y + off.y }; w.b = { x: d.b.x + off.x, y: d.b.y + off.y }; }
+        applyAttachments(s, d.attA, { x: d.a.x + off.x, y: d.a.y + off.y });
+        applyAttachments(s, d.attB, { x: d.b.x + off.x, y: d.b.y + off.y });
       }, 'drag:' + d.id);
     } else if (d.type === 'roomVertex') {
       const q = g(p);
@@ -202,7 +230,11 @@ export default function Plan2D() {
       mutate((s) => { const x = s.openings.find((q) => q.id === d.id); if (x) x.offset = along; }, 'drag:' + d.id);
     }
   };
-  const onPointerUp = () => { drag.current = null; };
+  const onPointerUp = (e?: React.PointerEvent) => {
+    if (e) touches.current.delete(e.pointerId);
+    if (touches.current.size < 2) pinch.current = null;
+    drag.current = null;
+  };
   const onWheel = (e: React.WheelEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -239,7 +271,7 @@ export default function Plan2D() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#1f1d1b]" style={{ cursor: tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair' }}>
       <svg ref={svgRef} width={size.w} height={size.h} className="block touch-none select-none"
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel}
         onDoubleClick={() => finishDraft()} onContextMenu={(e) => { e.preventDefault(); finishDraft(); }}>
         <g transform={`translate(${view.ox} ${view.oy}) scale(${view.zoom})`}>
           {grid}
@@ -273,7 +305,7 @@ export default function Plan2D() {
               <line key={w.id} x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} strokeWidth={w.thickness} strokeLinecap="square"
                 stroke={sel ? '#f59e0b' : low ? '#fb923c' : w.source === 'detected' && w.confidence !== undefined ? '#fdba74' : '#e7e5e4'}
                 strokeDasharray={low ? `${6 * px} ${3 * px}` : undefined}
-                onPointerDown={(e) => startDrag(e, { type: 'wall', id: w.id, start: toPlan(e), a: w.a, b: w.b }, { kind: 'wall', id: w.id })} />
+                onPointerDown={(e) => startDrag(e, { type: 'wall', id: w.id, start: toPlan(e), a: w.a, b: w.b, attA: attachmentsAt(scene, floor.id, w.a), attB: attachmentsAt(scene, floor.id, w.b) }, { kind: 'wall', id: w.id })} />
             );
           })}
 
@@ -334,7 +366,7 @@ export default function Plan2D() {
                 <text x={m.x} y={m.y - 4 * px} fontSize={fs} fill="#fbbf24" textAnchor="middle" transform={`rotate(${((deg(ang) + 90) % 180) - 90} ${m.x} ${m.y})`}>{fmtLen(wallLength(w), units)}</text>
                 {(['a', 'b'] as const).map((end) => (
                   <circle key={end} cx={w[end].x} cy={w[end].y} r={6 * px} fill="#f59e0b" stroke="#1c1917" strokeWidth={1.5 * px}
-                    onPointerDown={(e) => startDrag(e, { type: 'wallEnd', id: w.id, end }, { kind: 'wall', id: w.id })} style={{ cursor: 'grab' }} />
+                    onPointerDown={(e) => startDrag(e, { type: 'wallEnd', id: w.id, end, att: attachmentsAt(scene, floor.id, w[end]) }, { kind: 'wall', id: w.id })} style={{ cursor: 'grab' }} />
                 ))}
               </g>
             );
@@ -376,6 +408,12 @@ export default function Plan2D() {
       {bp && !bp.pxPerMeter && (
         <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-amber-500/95 px-3 py-1.5 text-xs font-medium text-stone-950 shadow">
           Blueprint scale is not calibrated — use the ruler tool and enter a known length.
+        </div>
+      )}
+      {(tool === 'wall' || tool === 'room') && draft.length > 0 && (
+        <div className="absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-2">
+          <button onClick={() => finishDraft()} className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-950 shadow-lg">{tool === 'room' ? 'Close room' : 'Finish walls'}</button>
+          {tool === 'room' && <button onClick={() => setDraft([])} className="rounded-full bg-stone-800 px-4 py-2 text-sm text-stone-200 shadow-lg">Cancel</button>}
         </div>
       )}
       {(tool === 'wall' || tool === 'room') && (

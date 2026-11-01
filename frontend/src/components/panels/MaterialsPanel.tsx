@@ -5,9 +5,9 @@ import { Btn, Empty, Field, Section, inputCls } from '../ui';
 import type { Material, Scene, Selection } from '../../lib/types';
 import { materialSwatch } from '../../three/textures';
 import { parseColorInput } from '../../lib/materials';
-import { readAsDataUrl, sniffType } from '../../lib/image';
-import { roomWallSides } from '../../lib/ai';
-import { setWallMaterial, wallMaterialFor } from '../../lib/geometry';
+import { fileToBoundedDataUrl, sniffType } from '../../lib/image';
+import { roomWallSides } from '../../lib/placement';
+import { setWallMaterial, setWallSpanMaterial, wallMaterialAt, wallMaterialFor } from '../../lib/geometry';
 import { uid } from '../../lib/templates';
 
 type Target = 'wall' | 'room-walls' | 'floor' | 'ceiling' | 'object';
@@ -21,7 +21,7 @@ function currentMaterialId(s: Scene, sel: Selection, target: Target, side: WallS
     if (target === 'floor') return r?.floorMaterialId;
     if (target === 'ceiling') return r?.ceilingMaterialId;
     const ws = r && roomWallSides(s, r)[0];
-    if (ws) return wallMaterialFor(ws.wall, ws.side);
+    if (ws) return wallMaterialAt(ws.wall, ws.side, (ws.from + ws.to) / 2);
   }
   if (sel.kind === 'object') return s.objects.find((o) => o.id === sel.id)?.materialId;
 }
@@ -36,7 +36,8 @@ export function applyMaterial(s: Scene, sel: Selection, target: Target, m: Mater
     if (!r) return;
     if (target === 'floor') r.floorMaterialId = m.id;
     else if (target === 'ceiling') r.ceilingMaterialId = m.id;
-    else roomWallSides(s, r).forEach(({ wall, side: sd }) => setWallMaterial(wall, sd, m.id));
+    // only the stretch of each wall face that belongs to this room (a long wall may bound several rooms)
+    else roomWallSides(s, r).forEach(({ wall, side: sd, from, to }) => setWallSpanMaterial(wall, sd, from, to, m.id));
   }
   if (sel.kind === 'object') { const o = s.objects.find((x) => x.id === sel.id); if (o) { o.materialId = m.id; o.colorHex = m.colorHex; } }
 }
@@ -46,7 +47,8 @@ export default function MaterialsPanel() {
   const selection = useEditor((s) => s.selection);
   const { mutate, toast } = useEditor.getState();
   const s = project.scene;
-  const [roomTarget, setRoomTarget] = useState<'floor' | 'room-walls' | 'ceiling'>('floor');
+  const roomTarget = useEditor((s) => s.materialTarget);
+  const setRoomTarget = (t: 'floor' | 'room-walls' | 'ceiling') => useEditor.setState({ materialTarget: t });
   const [hex, setHex] = useState('#d8cfc2');
   const [rough, setRough] = useState(0.85);
   const [metal, setMetal] = useState(0);
@@ -70,8 +72,9 @@ export default function MaterialsPanel() {
   const uploadTexture = async (f: File) => {
     const t = await sniffType(f);
     if (!t || t === 'pdf') { toast('Textures must be PNG, JPG or WebP images.', 'error'); return; }
-    if (f.size > 8 * 1024 * 1024) { toast('Texture images must be under 8 MB.', 'error'); return; }
-    const url = await readAsDataUrl(f);
+    if (f.size > 15 * 1024 * 1024) { toast('Texture images must be under 15 MB.', 'error'); return; }
+    let url: string;
+    try { url = await fileToBoundedDataUrl(f, 1024); } catch (e) { toast((e as Error).message, 'error'); return; }
     const id = 'tex-' + uid();
     apply({ id, name: f.name.replace(/\.[^.]+$/, ''), kind: 'custom', colorHex: '#ffffff', roughness: rough, metalness: metal, textureDataUrl: url, textureScale: 1, pricePerM2: 0 });
     toast('Texture applied — adjust its scale below if needed', 'success');
@@ -84,6 +87,10 @@ export default function MaterialsPanel() {
   const kinds = ['all', 'paint', 'wood', 'stone', 'tile', 'concrete', 'fabric', 'metal', 'custom'];
   return (
     <>
+      <div className="sticky top-[41px] z-10 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-100" role="status">
+        Applying to: <b>{target === 'floor' ? 'Floor' : target === 'ceiling' ? 'Ceiling' : target === 'room-walls' ? 'Walls of this room' : target === 'wall' ? (side === 'both' ? 'Wall (both faces)' : `Wall face ${side}`) : 'Selected item'}</b>
+        {selection?.kind === 'room' && <> · {s.rooms.find((r) => r.id === selection.id)?.name}</>}
+      </div>
       <Section title="Apply to">
         {selection?.kind === 'room' ? (
           <div className="flex overflow-hidden rounded-md border border-stone-700 text-sm">

@@ -1,10 +1,13 @@
 """Blueprint detection: synchronous for small images, or as a background job with progress."""
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -16,12 +19,31 @@ from ..services.detection import decode_gray, detect, scale_result
 
 router = APIRouter(prefix="/api", tags=["blueprints"])
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+# bounded CPU work: detection never runs on the event loop and at most N run at once
+_slots = asyncio.Semaphore(settings.max_concurrent_detections)
+
+
+def sweep_uploads() -> int:
+    """Delete stored uploads older than the retention period. Returns files removed."""
+    if not os.path.isdir(settings.upload_dir):
+        return 0
+    cutoff = time.time() - settings.upload_retention_hours * 3600
+    n = 0
+    for name in os.listdir(settings.upload_dir):
+        path = os.path.join(settings.upload_dir, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                n += 1
+        except OSError:
+            pass
+    return n
 
 
 def _run(data: bytes, ppm: float | None, threshold: int | None) -> dict:
     gray, k = decode_gray(data)
     if gray.shape[0] * gray.shape[1] * k * k > settings.max_image_pixels:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Image has too many pixels")
+        raise HTTPException(413, "Image has too many pixels")
     # detection runs on the downscaled copy; px_per_meter refers to the uploaded image
     res = detect(gray, ppm / k if ppm else None, threshold)
     return scale_result(res, k)
@@ -36,9 +58,15 @@ async def detect_sync(
 ):
     data, _, _ = await read_validated(file, IMAGE_TYPES)
     try:
-        return _run(data, px_per_meter, threshold)
+        await asyncio.wait_for(_slots.acquire(), timeout=20)
+    except asyncio.TimeoutError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Detection is busy, please retry shortly", headers={"Retry-After": "10"}) from e
+    try:
+        return await run_in_threadpool(_run, data, px_per_meter, threshold)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    finally:
+        _slots.release()
 
 
 def _job_worker(job_id: str, path: str, ppm: float | None, threshold: int | None) -> None:
@@ -65,6 +93,10 @@ def _job_worker(job_id: str, path: str, ppm: float | None, threshold: int | None
             job.completed_at = datetime.now(timezone.utc)
             db.commit()
         db.close()
+        try:  # the result is stored; the raw upload is no longer needed
+            os.remove(path)
+        except OSError:
+            pass
 
 
 @router.post("/jobs/detect", response_model=JobOut, status_code=202)

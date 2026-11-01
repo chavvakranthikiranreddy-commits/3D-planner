@@ -14,9 +14,10 @@
 import type { Material, Room, RoomType, Scene, SceneObject, Selection } from './types';
 import { getAsset } from './catalog';
 import type { AssetStyle } from './catalog';
-import { centroid, polygonArea, fmtArea, setWallMaterial, wallAngle, wallLength } from './geometry';
+import { polygonArea, fmtArea, setWallSpanMaterial } from './geometry';
 import { parseColorInput, rgbToHex, hexToRgb } from './materials';
-import { applyChanges, localProvider, roomWallSides } from './ai';
+import { applyChanges, localProvider } from './ai';
+import { findSpot, objectInRoom, roomWallSides } from './placement';
 import { makeObject, uid } from './templates';
 
 export interface ChatImage {
@@ -38,6 +39,8 @@ export interface ChatOutcome {
   async?: () => Promise<ChatOutcome>;
   usedImage?: boolean;
   suggestions?: string[];
+  /** Destructive/bulk change: ask first; apply `confirm` only if the user answers yes. */
+  confirm?: ChatOutcome;
   ok: boolean;
 }
 
@@ -225,49 +228,11 @@ export function findRoom(text: string, scene: Scene, selection: Selection, floor
   return { room: null, span: '' };
 }
 
-/** Best wall for something to stand against: long, few openings, not crowded by existing furniture. */
-function wallSpot(scene: Scene, room: Room, depth: number, width: number, taken: number[] = []) {
-  const sides = roomWallSides(scene, room);
-  if (!sides.length) return null;
-  const others = scene.objects.filter((o) => o.floorId === room.floorId && o.elevation < 0.5);
-  const candidates = sides.map((s, i) => {
-    const w = s.wall;
-    const L = wallLength(w);
-    const ang = wallAngle(w);
-    let n = { x: -Math.sin(ang), y: Math.cos(ang) };
-    if (s.side === 'B') n = { x: -n.x, y: -n.y };
-    const ops = scene.openings.filter((o) => o.wallId === w.id);
-    const off = w.thickness / 2 + depth / 2 + 0.03;
-    const at = (a: number) => ({ x: w.a.x + Math.cos(ang) * a + n.x * off, y: w.a.y + Math.sin(ang) * a + n.y * off });
-    const blocked = (a: number) => {
-      if (a - width / 2 < 0.05 || a + width / 2 > L - 0.05) return true;
-      if (ops.some((o) => Math.abs(o.offset - a) < (o.width + width) / 2 + 0.1)) return true;
-      const p = at(a);
-      // keep the centre inside this room and clear of furniture already there
-      if (!pointInRoom({ x: p.x, y: p.y } as SceneObject, room)) return true;
-      return others.some((o) => Math.abs(o.x - p.x) < (Math.max(o.dims.w, o.dims.d) + width) / 2 - 0.05 && Math.abs(o.y - p.y) < (Math.max(o.dims.w, o.dims.d) + depth) / 2 - 0.05);
-    };
-    let along = -1;
-    for (let k = 0; k <= L / 2; k += 0.1) {
-      if (!blocked(L / 2 + k)) { along = L / 2 + k; break; }
-      if (!blocked(L / 2 - k)) { along = L / 2 - k; break; }
-    }
-    const open = ops.reduce((a, o) => a + o.width, 0);
-    const score = (along < 0 ? -50 : 0) + L - open * 1.5 - taken.filter((t) => t === i).length * 3;
-    return { i, n, along: along < 0 ? L / 2 : along, at, score };
-  }).sort((a, b) => b.score - a.score);
-  const best = candidates[0];
-  const p = best.at(best.along);
-  return { index: best.i, x: +p.x.toFixed(3), y: +p.y.toFixed(3), rotation: Math.atan2(best.n.x, best.n.y) };
-}
-
-function placeInRoom(scene: Scene, room: Room, dims: { w: number; d: number }, againstWall: boolean, taken: number[], k: number) {
-  if (againstWall) {
-    const spot = wallSpot(scene, room, dims.d, dims.w, taken);
-    if (spot) { taken.push(spot.index); return spot; }
-  }
-  const c = centroid(room.polygon);
-  return { x: +(c.x + (k % 3) * 0.7 - 0.7 * (k > 0 ? 1 : 0)).toFixed(3), y: +(c.y + Math.floor(k / 3) * 0.7).toFixed(3), rotation: 0, index: -1 };
+/** Place an item safely inside the room (whole footprint inside, clear of furniture and door swings). */
+function placeInRoom(scene: Scene, room: Room, item: { dims: { w: number; d: number; h: number }; assetId?: string; elevation?: number }, againstWall: boolean, placed: SceneObject[]) {
+  const others = [...scene.objects, ...placed];
+  return findSpot(scene, room, item, { kind: againstWall ? 'wall' : 'center', others })
+    ?? (againstWall ? findSpot(scene, room, item, { kind: 'center', others }) : null);
 }
 
 const roomList = (scene: Scene) => scene.rooms.map((r, i) => `${i + 1}. ${r.name} (${r.roomType})`).join('\n');
@@ -358,6 +323,9 @@ export function runCommand(
 
   // ── resolve the room the command is about
   const hit = findRoom(text, scene, ctx.selection, ctx.floorId);
+  // A room was named but could not be resolved (unknown, ambiguous, missing): stop here.
+  // Never fall back to "all rooms" — that turned "clear furniture in room 99" into a project-wide delete.
+  if (hit.error) return { ok: false, reply: hit.error, suggestions: hit.candidates?.slice(0, 3).map((r) => raw.trim().replace(new RegExp(hit.span.trim(), 'i'), r.name.toLowerCase())) };
   const rest = hit.span ? text.replace(hit.span, ' ') : text;
   const wantsImage = !!image && (/\b(this|the|that|my|attached|uploaded)\s+(image|photo|pic|picture|design|product|one|sofa|bed|item)\b|\b(it|this)\b/.test(t) || !findItem(rest));
   const room = hit.room;
@@ -404,8 +372,9 @@ export function runCommand(
     if (asArt) {
       const w = Math.min(2.4, Math.max(0.3, dimsIn?.w || (image.aspect > 1.2 ? 0.7 : 1.0)));
       const h = +(w * image.aspect).toFixed(2);
-      const spot = wallSpot(scene, room, 0.04, w);
-      if (!spot) return { ok: false, reply: `${room.name} has no walls I can hang it on.` };
+      // wall art hangs above furniture, so only walls/doors matter
+      const spot = findSpot(scene, room, { dims: { w, d: 0.04, h }, assetId: 'art', elevation: 1.2 }, { kind: 'wall', others: [] });
+      if (!spot) return { ok: false, reply: `${room.name} has no free wall wide enough to hang it on.` };
       const o: SceneObject = { ...makeObject('art', room.floorId, spot.x, spot.y, spot.rotation, 'manual'), name: `Art · ${image.name}`.slice(0, 40), dims: { w, h, d: 0.04 }, elevation: +Math.max(0.9, 1.55 - h / 2).toFixed(2), imageDataUrl: image.dataUrl, price: 0, estimated: false, colorHex: '#1f1f1f' };
       return { ok: true, usedImage: true, reply: `Hung the image on the longest free wall of ${room.name} (${w.toFixed(2)} × ${h.toFixed(2)} m, centre at eye level). Drag it in the plan or set its size in Properties.`, edit: (s) => { s.objects.push(o); }, select: { kind: 'object', id: o.id }, view: 'split' };
     }
@@ -413,7 +382,8 @@ export function runCommand(
     const base = pd?.[1] ?? { w: 1.0, d: 0.6, h: 0.9 };
     const dims = { w: dimsIn?.w || base.w, d: dimsIn?.d || base.d, h: dimsIn?.h || base.h };
     const against = !!pd && !/table|lamp|rug|chair/.test(pd[2].toLowerCase());
-    const spot = placeInRoom(scene, room, dims, against, [], 0);
+    const spot = placeInRoom(scene, room, { dims, assetId: 'box' }, against, []);
+    if (!spot) return { ok: false, reply: `There's no free spot in ${room.name} for a ${dims.w}×${dims.d} m item. Try a smaller size, e.g. "place this image in ${room.name.toLowerCase()} 120 x 60 cm", or make room first.` };
     const o: SceneObject = {
       ...makeObject('box', room.floorId, spot.x, spot.y, spot.rotation, 'manual'),
       name: (pd?.[2] ?? 'Product') + ' (from photo)', dims, imageDataUrl: image.dataUrl, estimated: true, price: 0, colorHex: pickTone(image.palette),
@@ -454,11 +424,18 @@ export function runCommand(
     const it = findItem(rest);
     const all = /\b(all|every|everything|furniture)\b/.test(rest);
     if (!it && !all) return { ok: false, reply: 'What should I remove? e.g. "remove the rug from the hall" or "clear all furniture in bedroom 2".' };
-    const inRoom = (o: SceneObject) => !room || (o.floorId === room.floorId && pointInRoom(o, room));
-    const victims = scene.objects.filter((o) => inRoom(o) && (all && !it ? true : o.assetId === it!.assetId));
+    // Scope must be explicit: a room, or the words "whole house / entire project / everywhere".
+    const wholeProject = /\b(whole (house|home|project|floor plan)|entire (house|home|project)|everywhere|all rooms|every room)\b/.test(t);
+    if (!room && !wholeProject) return { ok: false, reply: `Which room should I remove ${it ? 'the ' + it.span : 'furniture'} from? Name a room (e.g. "from the hall"), or say "from the whole house" to include every room.`, suggestions: scene.rooms.slice(0, 3).map((r) => `remove ${it ? 'the ' + it.span : 'all furniture'} from ${r.name.toLowerCase()}`) };
+    const inScope = (o: SceneObject) => (room ? o.floorId === room.floorId && objectInRoom(o, room) : true);
+    const victims = scene.objects.filter((o) => inScope(o) && (all && !it ? true : o.assetId === it!.assetId));
     if (!victims.length) return { ok: false, reply: `Nothing to remove${room ? ` in ${room.name}` : ''}.` };
     const ids = new Set(victims.map((v) => v.id));
-    return { ok: true, reply: `Removed ${victims.length} item(s)${room ? ` from ${room.name}` : ''}: ${[...new Set(victims.map((v) => v.name))].join(', ')}.`, edit: (s) => { s.objects = s.objects.filter((o) => !ids.has(o.id)); } };
+    const where = room ? room.name : 'the whole project';
+    const rooms = [...new Set(victims.map((v) => scene.rooms.find((r) => r.floorId === v.floorId && objectInRoom(v, r))?.name ?? 'outside rooms'))];
+    const done: ChatOutcome = { ok: true, reply: `Removed ${victims.length} item(s) from ${where}.`, edit: (s) => { s.objects = s.objects.filter((o) => !ids.has(o.id)); } };
+    if (victims.length === 1) return done;
+    return { ok: true, reply: `This will remove ${victims.length} items (${[...new Set(victims.map((v) => v.name))].slice(0, 6).join(', ')}${victims.length > 6 ? '…' : ''}) from ${rooms.join(', ')}. Reply "yes" to confirm or "no" to cancel.`, confirm: done, suggestions: ['yes', 'no'] };
   }
 
   // ── add catalog furniture
@@ -468,19 +445,21 @@ export function runCommand(
   if (item && /\b(add|place|put|insert|keep|need|want|include|bring)\b/.test(t)) {
     if (!room) return needRoom();
     const a = getAsset(item.assetId)!;
-    const taken: number[] = [];
     const objs: SceneObject[] = [];
+    let missing = 0;
     for (let k = 0; k < item.count; k++) {
-      const spot = placeInRoom(scene, room, a.dims, WALL_ITEMS.has(a.id), taken, k);
+      const spot = placeInRoom(scene, room, { dims: a.dims, assetId: a.id, elevation: a.elevation }, WALL_ITEMS.has(a.id), objs);
+      if (!spot) { missing++; continue; }
       const o = makeObject(a.id, room.floorId, spot.x, spot.y, spot.rotation, 'manual');
       if (color && !/\b(floor|wall|ceiling)\b/.test(rest)) { o.colorHex = color.hex; }
       const acc = accent?.[1] ?? accent?.[2];
       if (acc) o.accentHex = findColor(acc)?.hex ?? o.accentHex;
       objs.push(o);
     }
+    if (!objs.length) return { ok: false, reply: `There's no free spot in ${room.name} for a ${a.name} (${a.dims.w}×${a.dims.d} m) — the room is too small or doors and furniture are in the way. Remove or move something first.` };
     return {
       ok: true,
-      reply: `Added ${item.count > 1 ? item.count + ' × ' : ''}${a.name} to ${room.name}${color ? ` in ${color.label}` : ''}${accent ? ` with ${accent[1] ?? accent[2]} accents` : ''}${WALL_ITEMS.has(a.id) ? ', against the longest free wall' : ''}. Drag it in the plan or use Move/Rotate in 3D to fine-tune.`,
+      reply: `Added ${objs.length > 1 ? objs.length + ' × ' : ''}${a.name} to ${room.name}${missing ? ` (${missing} more didn't fit)` : ''}${color ? ` in ${color.label}` : ''}${accent ? ` with ${accent[1] ?? accent[2]} accents` : ''}${WALL_ITEMS.has(a.id) ? ', against the longest free wall' : ''}. Drag it in the plan or use Move/Rotate in 3D to fine-tune.`,
       edit: (s) => { s.objects.push(...objs); },
       select: { kind: 'object', id: objs[0].id },
     };
@@ -489,7 +468,7 @@ export function runCommand(
   // ── recolour existing items: "make the sofa navy"
   if (item && (color || findMaterial(rest))) {
     const mat = findMaterial(rest);
-    const targets = scene.objects.filter((o) => o.assetId === item.assetId && (!room || (o.floorId === room.floorId && pointInRoom(o, room))));
+    const targets = scene.objects.filter((o) => o.assetId === item.assetId && (!room || (o.floorId === room.floorId && objectInRoom(o, room))));
     if (!targets.length) return { ok: false, reply: `There's no ${item.span}${room ? ` in ${room.name}` : ''} yet. Say "add a ${item.span}${room ? ` to ${room.name.toLowerCase()}` : ' to the hall'}" first.` };
     const ids = new Set(targets.map((x) => x.id));
     return {
@@ -511,16 +490,6 @@ export function runCommand(
   if (image) return { ok: false, reply: 'Where should this image go? e.g. "place this image in the hall" or "put this image on the bedroom wall as art".', suggestions: scene.rooms.slice(0, 3).map((r) => `place this image in ${r.name.toLowerCase()}`) };
   if (hit.error) return { ok: false, reply: hit.error };
   return { ok: false, reply: `I didn't catch that. Try one of these:`, suggestions: HELP.slice(0, 5) };
-}
-
-function pointInRoom(o: SceneObject, r: Room) {
-  let inside = false;
-  const p = { x: o.x, y: o.y }, poly = r.polygon;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i], b = poly[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
 }
 
 function paintRoom(scene: Scene, room: Room, surf: 'walls' | 'floor' | 'ceiling', col: { hex: string; label: string } | null, matId: string | null): ChatOutcome {
@@ -547,7 +516,8 @@ function paintRoom(scene: Scene, room: Room, surf: 'walls' | 'floor' | 'ceiling'
       if (!r) return;
       if (surf === 'floor') r.floorMaterialId = m.id;
       else if (surf === 'ceiling') r.ceilingMaterialId = m.id;
-      else for (const sd of sides) { const w = s.walls.find((x) => x.id === sd.wall.id); if (w) setWallMaterial(w, sd.side, m.id); }
+      // only this room's stretch of each wall face — neighbours on the same long wall keep their finish
+      else for (const sd of sides) { const w = s.walls.find((x) => x.id === sd.wall.id); if (w) setWallSpanMaterial(w, sd.side, sd.from, sd.to, m.id); }
     },
     select: { kind: 'room', id },
   };

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { runCommand, findColor, type ChatImage } from '../lib/chat';
 import { sampleProject } from '../lib/templates';
-import { wallMaterialFor } from '../lib/geometry';
-import { roomWallSides } from '../lib/ai';
+import { wallMaterialAt, objectCorners, quadsOverlap } from '../lib/geometry';
+import { roomWallSides } from '../lib/placement';
 import type { Scene } from '../lib/types';
 
 const ctx = (scene: Scene, image: ChatImage | null = null) => ({ scene, selection: null, floorId: 'f0', image, units: 'm' as const });
@@ -19,9 +19,9 @@ describe('design chat', () => {
     const out = run(s, 'use this color code #C46A4A for that hall');
     expect(out.ok).toBe(true);
     const hall = s.rooms.find((r) => r.roomType === 'living')!;
-    for (const { wall, side } of roomWallSides(s, hall)) expect(s.materials[wallMaterialFor(wall, side)].colorHex).toBe('#c46a4a');
+    for (const { wall, side, from, to } of roomWallSides(s, hall)) expect(s.materials[wallMaterialAt(wall, side, (from + to) / 2)].colorHex).toBe('#c46a4a');
     const bed = s.rooms.find((r) => r.name === 'Master Bedroom')!;
-    expect(roomWallSides(s, bed).some(({ wall, side }) => s.materials[wallMaterialFor(wall, side)].colorHex === '#c46a4a')).toBe(false);
+    expect(roomWallSides(s, bed).some(({ wall, side, from, to }) => s.materials[wallMaterialAt(wall, side, (from + to) / 2)].colorHex === '#c46a4a')).toBe(false);
   });
   it('resolves "first bedroom" and places an attached image there', () => {
     const s = sampleProject().scene;
@@ -71,8 +71,8 @@ describe('design chat', () => {
     const out = run(s, 'use the colours from this image for the kitchen', img);
     expect(out.ok).toBe(true);
     const k = s.rooms.find((r) => r.name === 'Kitchen')!;
-    const { wall, side } = roomWallSides(s, k)[0];
-    expect(s.materials[wallMaterialFor(wall, side)].colorHex).toBe('#8a9099');
+    const { wall, side, from, to } = roomWallSides(s, k)[0];
+    expect(s.materials[wallMaterialAt(wall, side, (from + to) / 2)].colorHex).toBe('#8a9099');
   });
 });
 
@@ -89,7 +89,8 @@ describe('follow-ups', () => {
     const s = sampleProject().scene;
     run(s, 'add a wardrobe to the master bedroom');
     const w = s.objects.at(-1)!;
-    const clash = s.objects.slice(0, -1).filter((o) => o.elevation < 0.5 && Math.abs(o.x - w.x) < (o.dims.w + w.dims.w) / 2 - 0.1 && Math.abs(o.y - w.y) < (o.dims.d + w.dims.d) / 2 - 0.1);
+    expect(w.assetId).toBe('wardrobe');
+    const clash = s.objects.slice(0, -1).filter((o) => o.elevation < 0.5 && o.assetId !== 'rug' && quadsOverlap(objectCorners(w), objectCorners(o, -0.01)));
     expect(clash.map((c) => c.name)).toEqual([]);
   });
 });

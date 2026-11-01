@@ -1,4 +1,4 @@
-import type { Opening, Pt, Units, Wall } from './types';
+import type { Opening, Pt, Scene, SceneObject, Units, Wall } from './types';
 
 export const FT_PER_M = 3.28084;
 
@@ -128,10 +128,135 @@ export function wallSideFacing(w: Pick<Wall, 'a' | 'b' | 'thickness'>, poly: Pt[
   return pointInPolygon(pA, poly) ? 'A' : 'B';
 }
 export const wallMaterialFor = (w: Wall, side: 'A' | 'B') => (side === 'B' ? w.materialIdB ?? w.materialId : w.materialId);
+
+/** Finish on one face at distance `at` along the wall, honouring per-room spans. */
+export function wallMaterialAt(w: Wall, side: 'A' | 'B', at: number): string {
+  const sp = (w.spans ?? []).filter((x) => x.side === side && at >= x.from - 1e-6 && at <= x.to + 1e-6);
+  return sp.length ? sp[sp.length - 1].materialId : wallMaterialFor(w, side);
+}
+
+/** Paint a whole face (or both). Clears the per-room spans on the painted face(s). */
 export function setWallMaterial(w: Wall, side: 'A' | 'B' | 'both', id: string) {
-  if (side === 'both') { w.materialId = id; w.materialIdB = id; }
-  else if (side === 'A') { if (w.materialIdB === undefined) w.materialIdB = w.materialId; w.materialId = id; }
+  if (side === 'both') { w.materialId = id; w.materialIdB = id; w.spans = []; return; }
+  if (side === 'A') { if (w.materialIdB === undefined) w.materialIdB = w.materialId; w.materialId = id; }
   else w.materialIdB = id;
+  w.spans = (w.spans ?? []).filter((x) => x.side !== side);
+}
+
+/**
+ * Paint only [from, to] of one face — used when a room covers part of a long wall,
+ * so neighbouring rooms on the same face keep their own finish.
+ */
+export function setWallSpanMaterial(w: Wall, side: 'A' | 'B', from: number, to: number, id: string) {
+  const L = wallLength(w);
+  const a = Math.max(0, Math.min(from, to)), b = Math.min(L, Math.max(from, to));
+  if (b - a < 0.01) return;
+  if (a < 0.02 && b > L - 0.02) { setWallMaterial(w, side, id); return; }
+  const kept: NonNullable<Wall['spans']> = [];
+  for (const sp of w.spans ?? []) {
+    if (sp.side !== side || sp.to <= a + 1e-6 || sp.from >= b - 1e-6) { kept.push(sp); continue; }
+    if (sp.from < a - 1e-6) kept.push({ ...sp, to: a });
+    if (sp.to > b + 1e-6) kept.push({ ...sp, from: b });
+  }
+  kept.push({ side, from: +a.toFixed(4), to: +b.toFixed(4), materialId: id });
+  w.spans = kept;
+}
+
+/** Distances along the wall where the finish changes on either face. */
+export function spanBreaks(w: Wall): number[] {
+  const out = new Set<number>();
+  for (const sp of w.spans ?? []) { out.add(sp.from); out.add(sp.to); }
+  return [...out].sort((x, y) => x - y);
+}
+
+// ---------- openings: one placement rule shared by 2D, 3D, collision and estimates ----------
+/** Clamp an opening so it fits its wall: width ≤ length, half-width ≤ centre ≤ length − half-width. */
+export function normalizeOpening<T extends Pick<Opening, 'offset' | 'width' | 'height' | 'sill' | 'type'>>(o: T, wall: Pick<Wall, 'a' | 'b' | 'height'>): T {
+  const L = wallLength(wall);
+  const width = Math.max(0.1, Math.min(o.width, L));
+  const offset = Math.max(width / 2, Math.min(L - width / 2, o.offset));
+  const sill = o.type === 'door' ? 0 : Math.max(0, Math.min(o.sill, wall.height - 0.1));
+  const height = Math.max(0.1, Math.min(o.height, wall.height - sill));
+  return { ...o, width: +width.toFixed(4), offset: +offset.toFixed(4), sill: +sill.toFixed(4), height: +height.toFixed(4) };
+}
+
+/** Normalise every opening in place (run after each edit so stored data never disagrees with the views). */
+export function normalizeSceneOpenings(s: Scene) {
+  const walls = new Map(s.walls.map((w) => [w.id, w]));
+  s.openings = s.openings.filter((o) => walls.has(o.wallId));
+  s.openings.forEach((o, i) => {
+    const n = normalizeOpening(o, walls.get(o.wallId)!);
+    if (n.offset !== o.offset || n.width !== o.width || n.sill !== o.sill || n.height !== o.height) s.openings[i] = n;
+  });
+}
+
+// ---------- connected editing ----------
+/**
+ * Move a plan vertex and everything attached to it on the same floor:
+ * coincident wall endpoints and room corners follow, so walls stay joined.
+ */
+export function moveVertex(s: Scene, floorId: string, from: Pt, to: Pt, tol = 0.02, skip?: { wallId: string; end: 'a' | 'b' }) {
+  for (const w of s.walls) {
+    if (w.floorId !== floorId) continue;
+    for (const end of ['a', 'b'] as const) {
+      if (skip && skip.wallId === w.id && skip.end === end) continue;
+      if (dist(w[end], from) <= tol) w[end] = { ...to };
+    }
+  }
+  for (const r of s.rooms) {
+    if (r.floorId !== floorId) continue;
+    r.polygon = r.polygon.map((p) => (dist(p, from) <= tol ? { ...to } : p));
+  }
+}
+
+export interface Attachments { walls: { id: string; end: 'a' | 'b' }[]; rooms: { id: string; idx: number }[] }
+/** Everything that shares a vertex at `p` on a floor (wall ends + room corners). Captured once when a drag starts. */
+export function attachmentsAt(s: Scene, floorId: string, p: Pt, tol = 0.02): Attachments {
+  const out: Attachments = { walls: [], rooms: [] };
+  for (const w of s.walls) if (w.floorId === floorId) for (const end of ['a', 'b'] as const) if (dist(w[end], p) <= tol) out.walls.push({ id: w.id, end });
+  for (const r of s.rooms) if (r.floorId === floorId) r.polygon.forEach((q, idx) => { if (dist(q, p) <= tol) out.rooms.push({ id: r.id, idx }); });
+  return out;
+}
+export function applyAttachments(s: Scene, att: Attachments, to: Pt) {
+  for (const { id, end } of att.walls) { const w = s.walls.find((x) => x.id === id); if (w) w[end] = { ...to }; }
+  for (const { id, idx } of att.rooms) { const r = s.rooms.find((x) => x.id === id); if (r && r.polygon[idx]) r.polygon[idx] = { ...to }; }
+}
+
+// ---------- footprints ----------
+export function objectCorners(o: Pick<SceneObject, 'x' | 'y' | 'rotation' | 'dims'>, pad = 0): Pt[] {
+  const hw = o.dims.w / 2 + pad, hd = o.dims.d / 2 + pad;
+  // plan front vector is (sin r, cos r); right vector is (cos r, -sin r)
+  const c = Math.cos(o.rotation), sn = Math.sin(o.rotation);
+  return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, z]) => ({ x: o.x + x * c + z * sn, y: o.y - x * sn + z * c }));
+}
+function project(poly: Pt[], ax: Pt) {
+  let mn = Infinity, mx = -Infinity;
+  for (const p of poly) { const v = p.x * ax.x + p.y * ax.y; mn = Math.min(mn, v); mx = Math.max(mx, v); }
+  return [mn, mx];
+}
+/** Separating-axis overlap test for two convex quads. */
+export function quadsOverlap(a: Pt[], b: Pt[]): boolean {
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      const ax = { x: -(q.y - p.y), y: q.x - p.x };
+      const [a0, a1] = project(a, ax), [b0, b1] = project(b, ax);
+      if (a1 <= b0 + 1e-6 || b1 <= a0 + 1e-6) return false;
+    }
+  }
+  return true;
+}
+/** All footprint corners inside the polygon and no polygon edge crossing the footprint (handles concave rooms). */
+export function footprintInside(corners: Pt[], poly: Pt[]): boolean {
+  if (!corners.every((c) => pointInPolygon(c, poly))) return false;
+  const cross = (p1: Pt, p2: Pt, p3: Pt, p4: Pt) => {
+    const d = (a: Pt, b: Pt, c: Pt) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    return d(p1, p2, p3) * d(p1, p2, p4) < -1e-9 && d(p3, p4, p1) * d(p3, p4, p2) < -1e-9;
+  };
+  for (let i = 0; i < corners.length; i++) for (let j = 0; j < poly.length; j++) {
+    if (cross(corners[i], corners[(i + 1) % corners.length], poly[j], poly[(j + 1) % poly.length])) return false;
+  }
+  return true;
 }
 
 /** Validation for FR "validate geometry". Returns human-readable issues. */
@@ -146,6 +271,7 @@ export function validateGeometry(walls: Wall[], openings: Opening[]): string[] {
     for (let i = 0; i < os.length; i++) {
       const o = os[i];
       if (o.width > L + 1e-3) issues.push(`A ${o.type} is wider than its wall.`);
+      else if (o.offset < o.width / 2 - 1e-3 || o.offset > L - o.width / 2 + 1e-3) issues.push(`A ${o.type} extends past the end of its wall.`);
       if (i > 0) {
         const p = os[i - 1];
         if (p.offset + p.width / 2 > o.offset - o.width / 2 + 1e-3) issues.push(`Two openings overlap on the same wall.`);
@@ -176,6 +302,19 @@ export function fmtLen(m: number, units: Units, digits = 2): string {
 export function fmtArea(m2: number, units: Units): string {
   return units === 'ft' ? `${(m2 * FT_PER_M * FT_PER_M).toFixed(0)} sq ft` : `${m2.toFixed(2)} m²`;
 }
+/** Parse feet-and-inches input: 10'6", 10' 6, 10 ft 6 in, 10.5, 126" → feet. */
+export function parseFeetInches(text: string): number | null {
+  const t = text.trim().toLowerCase().replace(/feet|foot|ft/g, "'").replace(/inches|inch|in\b/g, '"').replace(/[′’]/g, "'").replace(/[″”]/g, '"');
+  let m = t.match(/^(-?\d+(?:\.\d+)?)\s*'\s*(?:(\d+(?:\.\d+)?)\s*"?)?$/);
+  if (m) return +m[1] + (m[2] ? +m[2] / 12 : 0);
+  m = t.match(/^(\d+(?:\.\d+)?)\s*"$/);
+  if (m) return +m[1] / 12;
+  m = t.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/);
+  if (m) return +m[1] + +m[2] / 12;
+  m = t.match(/^-?\d+(?:\.\d+)?$/);
+  return m ? +m[0] : null;
+}
+
 /** Convert user-entered value in display units to metres. */
 export const toMeters = (v: number, units: Units) => (units === 'ft' ? v / FT_PER_M : v);
 export const fromMeters = (m: number, units: Units) => (units === 'ft' ? m * FT_PER_M : m);

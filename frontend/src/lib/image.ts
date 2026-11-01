@@ -44,26 +44,48 @@ export function toCanvas(img: CanvasImageSource & { width: number; height: numbe
   return c;
 }
 
-/** Render a PDF page to a canvas with pdf.js (loaded lazily). */
-export async function pdfPageCount(data: ArrayBuffer): Promise<number> {
+/** An open PDF that can render pages repeatedly; call destroy() when done (frees the worker's memory). */
+export interface PdfHandle { pages: number; render: (page: number, maxSide?: number) => Promise<HTMLCanvasElement>; destroy: () => void }
+
+export async function openPdf(data: ArrayBuffer): Promise<PdfHandle> {
   const pdfjs = await loadPdfjs();
-  const doc = await pdfjs.getDocument({ data: data.slice(0) }).promise;
-  return doc.numPages;
+  const task = pdfjs.getDocument({ data: data.slice(0) });
+  let doc;
+  try { doc = await task.promise; }
+  catch (e) {
+    const msg = (e as Error).message || '';
+    throw new Error(/password/i.test(msg) ? 'This PDF is password-protected. Remove the password and upload it again.' : 'This PDF could not be read. It may be damaged.');
+  }
+  return {
+    pages: doc.numPages,
+    render: async (page, maxSide = 2400) => {
+      const p = await doc.getPage(page);
+      const vp0 = p.getViewport({ scale: 1 });
+      const scale = Math.min(4, maxSide / Math.max(vp0.width, vp0.height));
+      const vp = p.getViewport({ scale });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await p.render({ canvasContext: ctx, viewport: vp, canvas: c }).promise;
+      p.cleanup();
+      return c;
+    },
+    destroy: () => { void task.destroy(); },
+  };
 }
-export async function renderPdfPage(data: ArrayBuffer, page: number, maxSide = 2400): Promise<HTMLCanvasElement> {
-  const pdfjs = await loadPdfjs();
-  const doc = await pdfjs.getDocument({ data: data.slice(0) }).promise;
-  const p = await doc.getPage(page);
-  const vp0 = p.getViewport({ scale: 1 });
-  const scale = Math.min(4, maxSide / Math.max(vp0.width, vp0.height));
-  const vp = p.getViewport({ scale });
+
+/** Downscale an uploaded texture/photo so stored projects stay small (A28). */
+export async function fileToBoundedDataUrl(file: File, maxSide = 2048, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): Promise<string> {
+  const img = await loadImage(await readAsDataUrl(file));
+  if (img.width * img.height > 60_000_000) throw new Error('That image is too large (over 60 megapixels).');
   const c = document.createElement('canvas');
-  c.width = Math.round(vp.width); c.height = Math.round(vp.height);
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  await p.render({ canvasContext: ctx, viewport: vp, canvas: c }).promise;
-  return c;
+  const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL(type, 0.88);
 }
+
 async function loadPdfjs() {
   const pdfjs = await import('pdfjs-dist');
   const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;

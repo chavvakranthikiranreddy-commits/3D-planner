@@ -4,7 +4,7 @@ import { OrbitControls, TransformControls, PointerLockControls, Sky, ContactShad
 import * as THREE from 'three';
 import { useEditor } from '../store/editor';
 import type { Material, Opening, Room, Scene, SceneObject, Wall } from '../lib/types';
-import { bbox, projectOnSegment, segmentWall, wallAngle, wallLength } from '../lib/geometry';
+import { bbox, normalizeOpening, projectOnSegment, segmentWall, spanBreaks, wallAngle, wallLength, wallMaterialAt } from '../lib/geometry';
 import { getMaterialTexture } from './textures';
 import { FurnitureModel } from './Furniture';
 import { getAsset } from '../lib/catalog';
@@ -46,22 +46,36 @@ function WallMesh({ wall, openings, materials, elevation, selected, onSelect }: 
 }) {
   const L = wallLength(wall);
   const ang = wallAngle(wall);
-  const { pieces, holes } = useMemo(() => segmentWall(wall, openings), [wall, openings]);
-  const m = materials[wall.materialId];
-  const mB = materials[wall.materialIdB ?? wall.materialId] ?? m;
+  const { pieces, holes } = useMemo(() => {
+    const seg = segmentWall(wall, openings);
+    // split solid pieces wherever a per-room finish span starts or ends
+    const breaks = spanBreaks(wall);
+    const out: typeof seg.pieces = [];
+    for (const p of seg.pieces) {
+      let s0 = p.s0;
+      for (const b of breaks) if (b > s0 + 1e-4 && b < p.s1 - 1e-4) { out.push({ ...p, s0, s1: b }); s0 = b; }
+      out.push({ ...p, s0 });
+    }
+    return { pieces: out, holes: seg.holes };
+  }, [wall, openings]);
   const lowConf = wall.confidence !== undefined && wall.confidence < 0.6;
   if (L < 0.01) return null;
   return (
     <group position={[wall.a.x, elevation, wall.a.y]} rotation={[0, -ang, 0]} onClick={onSelect}>
-      {pieces.map((p, i) => (
-        <mesh key={i} position={[(p.s0 + p.s1) / 2, (p.z0 + p.z1) / 2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[p.s1 - p.s0, p.z1 - p.z0, wall.thickness]} />
-          {[0, 1, 2, 3, 4, 5].map((fi) => {
-            const mm = fi === 5 ? mB : m;
-            return <SurfaceMat key={fi} attach={`material-${fi}`} m={lowConf ? { ...mm, colorHex: '#f3c9a0' } : mm} u={p.s1 - p.s0} v={p.z1 - p.z0} selected={selected} />;
-          })}
-        </mesh>
-      ))}
+      {pieces.map((p, i) => {
+        const mid = (p.s0 + p.s1) / 2;
+        const mA = materials[wallMaterialAt(wall, 'A', mid)];
+        const mB = materials[wallMaterialAt(wall, 'B', mid)] ?? mA;
+        return (
+          <mesh key={i} position={[mid, (p.z0 + p.z1) / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[p.s1 - p.s0, p.z1 - p.z0, wall.thickness]} />
+            {[0, 1, 2, 3, 4, 5].map((fi) => {
+              const mm = fi === 5 ? mB : mA;
+              return <SurfaceMat key={fi} attach={`material-${fi}`} m={lowConf ? { ...mm, colorHex: '#f3c9a0' } : mm} u={p.s1 - p.s0} v={p.z1 - p.z0} selected={selected} />;
+            })}
+          </mesh>
+        );
+      })}
       {holes.map((o) => (
         <group key={o.id} position={[o.offset, o.sill, 0]}>
           {o.type === 'window' ? (
@@ -217,26 +231,73 @@ function Registrar() {
   return null;
 }
 
-/** First-person walkthrough with simple wall collision (doors are passable). */
+/** Shared input state so on-screen touch controls can drive the walker. */
+export const walkInput = { keys: {} as Record<string, boolean>, look: { dx: 0, dy: 0 } };
+
+/** First-person walkthrough with wall collision (doors are passable). */
 function Walker({ scene, floorElev }: { scene: Scene; floorElev: number }) {
-  const { camera } = useThree();
-  const keys = useRef<Record<string, boolean>>({});
+  const { camera, gl } = useThree();
   const activeFloor = useEditor((s) => s.activeFloorId);
+  const locked = useRef(false);
+  const euler = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
+  // (re)spawn in the middle of the largest room whenever the floor changes
   useEffect(() => {
-    const rooms = scene.rooms.filter((r) => r.floorId === activeFloor);
+    const rooms = scene.rooms.filter((r) => r.floorId === activeFloor).sort((a, b) => {
+      const ba = bbox(a.polygon), bb = bbox(b.polygon);
+      return (bb.maxX - bb.minX) * (bb.maxY - bb.minY) - (ba.maxX - ba.minX) * (ba.maxY - ba.minY);
+    });
     const start = rooms[0] ? bbox(rooms[0].polygon) : { minX: 0, maxX: 2, minY: 0, maxY: 2 };
     camera.position.set((start.minX + start.maxX) / 2, floorElev + 1.6, (start.minY + start.maxY) / 2);
     camera.lookAt((start.minX + start.maxX) / 2, floorElev + 1.6, (start.minY + start.maxY) / 2 + 1);
-    const down = (e: KeyboardEvent) => (keys.current[e.code] = true);
-    const up = (e: KeyboardEvent) => (keys.current[e.code] = false);
+    euler.current.setFromQuaternion(camera.quaternion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFloor, floorElev]);
+  useEffect(() => {
+    const editable = (e: Event) => !!(e.target as HTMLElement)?.closest?.('input,textarea,select,[contenteditable]');
+    const down = (e: KeyboardEvent) => { if (!editable(e) && (locked.current || walkInput.keys.__touch)) walkInput.keys[e.code] = true; };
+    const up = (e: KeyboardEvent) => { walkInput.keys[e.code] = false; };
+    const clear = () => { for (const k of Object.keys(walkInput.keys)) if (k !== '__touch') walkInput.keys[k] = false; };
+    const onLock = () => { locked.current = document.pointerLockElement === gl.domElement; if (!locked.current) clear(); };
+    const vis = () => { if (document.hidden) clear(); };
+    // touch / mouse-drag look when pointer lock is unavailable
+    let last: { x: number; y: number } | null = null;
+    const pd = (e: PointerEvent) => { if (e.pointerType === 'touch') { walkInput.keys.__touch = true; last = { x: e.clientX, y: e.clientY }; } };
+    const pm = (e: PointerEvent) => { if (last && e.pointerType === 'touch') { walkInput.look.dx += e.clientX - last.x; walkInput.look.dy += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; } };
+    const pu = () => { last = null; };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    window.addEventListener('blur', clear);
+    document.addEventListener('visibilitychange', vis);
+    document.addEventListener('pointerlockchange', onLock);
+    gl.domElement.addEventListener('pointerdown', pd);
+    gl.domElement.addEventListener('pointermove', pm);
+    window.addEventListener('pointerup', pu);
+    return () => {
+      clear();
+      window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', clear);
+      document.removeEventListener('visibilitychange', vis); document.removeEventListener('pointerlockchange', onLock);
+      gl.domElement.removeEventListener('pointerdown', pd); gl.domElement.removeEventListener('pointermove', pm); window.removeEventListener('pointerup', pu);
+    };
+  }, [gl]);
   const walls = useMemo(() => scene.walls.filter((w) => w.floorId === activeFloor), [scene.walls, activeFloor]);
+  const rooms = useMemo(() => scene.rooms.filter((r) => r.floorId === activeFloor), [scene.rooms, activeFloor]);
+  const doorCentres = useMemo(() => scene.openings.flatMap((o) => {
+    const w = walls.find((x) => x.id === o.wallId);
+    if (!w || o.type !== 'door') return [];
+    const n = normalizeOpening(o, w), ang = wallAngle(w);
+    return [{ x: w.a.x + Math.cos(ang) * n.offset, y: w.a.y + Math.sin(ang) * n.offset, r: Math.max(0.6, n.width / 2 + 0.35) }];
+  }), [scene.openings, walls]);
   useFrame((_, dt) => {
-    const k = keys.current;
+    const look = walkInput.look;
+    if (look.dx || look.dy) {
+      euler.current.setFromQuaternion(camera.quaternion);
+      euler.current.y -= look.dx * 0.005;
+      euler.current.x = Math.max(-1.3, Math.min(1.3, euler.current.x - look.dy * 0.005));
+      camera.quaternion.setFromEuler(euler.current);
+      look.dx = 0; look.dy = 0;
+    }
+    const k = walkInput.keys;
+    if (!locked.current && !k.__touch) return;
     const speed = (k.ShiftLeft ? 3.2 : 1.6) * Math.min(dt, 0.05);
     const fwd = new THREE.Vector3();
     camera.getWorldDirection(fwd);
@@ -252,12 +313,18 @@ function Walker({ scene, floorElev }: { scene: Scene; floorElev: number }) {
     const tryMove = (dx: number, dz: number) => {
       const nx = camera.position.x + dx, nz = camera.position.z + dz;
       const p = { x: nx, y: nz };
+      // stay on a floor: inside some room of this floor (when rooms exist)
+      // (door openings bridge the wall-thickness gap between rooms traced from a plan)
+      if (rooms.length && !rooms.some((r) => pointInRoomPoly(p, r.polygon)) && !doorCentres.some((d) => Math.hypot(d.x - p.x, d.y - p.y) < d.r)) return false;
       for (const w of walls) {
         const pr = projectOnSegment(p, w.a, w.b);
         if (pr.distance < w.thickness / 2 + 0.25) {
-          // passable if inside a door opening on this wall
           const along = pr.t * wallLength(w);
-          const door = scene.openings.find((o) => o.wallId === w.id && o.type === 'door' && Math.abs(o.offset - along) < o.width / 2 - 0.2);
+          const door = scene.openings.find((o) => {
+            if (o.wallId !== w.id || o.type !== 'door') return false;
+            const n = normalizeOpening(o, w);
+            return Math.abs(n.offset - along) < n.width / 2 - 0.2;
+          });
           if (!door) return false;
         }
       }
@@ -267,6 +334,15 @@ function Walker({ scene, floorElev }: { scene: Scene; floorElev: number }) {
     if (!tryMove(mv.x, mv.z)) { tryMove(mv.x, 0) || tryMove(0, mv.z); }
   });
   return <PointerLockControls />;
+}
+
+function pointInRoomPoly(p: { x: number; y: number }, poly: { x: number; y: number }[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }
 
 function SceneContent({ walk, gizmoMode }: { walk: boolean; gizmoMode: 'translate' | 'rotate' }) {
@@ -298,7 +374,7 @@ function SceneContent({ walk, gizmoMode }: { walk: boolean; gizmoMode: 'translat
         intensity={L.sunIntensity}
         color={warm}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4 ? [1024, 1024] : [2048, 2048]}
         shadow-bias={-0.0004}
         shadow-camera-left={-span}
         shadow-camera-right={span}
@@ -372,9 +448,19 @@ export default function Viewport3D({ walk = false }: { walk?: boolean }) {
         </Suspense>
       </Canvas>
       {walk ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full bg-black/60 px-4 py-2 text-xs text-white">
-          Click the view to look around · W A S D to walk · Shift to run · Esc to release the mouse
-        </div>
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-3 mx-auto w-fit rounded-full bg-black/60 px-4 py-2 text-xs text-white">
+            <span className="hidden sm:inline">Click the view to look around · W A S D to walk · Shift to run · Esc to release the mouse</span>
+            <span className="sm:hidden">Drag to look around · use the arrows to walk</span>
+          </div>
+          <div className="absolute bottom-4 left-4 grid grid-cols-3 gap-1" aria-label="Walk controls">
+            {([['', ''], ['ArrowUp', '▲'], ['', ''], ['ArrowLeft', '◀'], ['ArrowDown', '▼'], ['ArrowRight', '▶']] as const).map(([code, label], i) => code ? (
+              <button key={i} aria-label={`Walk ${code.replace('Arrow', '').toLowerCase()}`} className="h-12 w-12 touch-none rounded-lg bg-black/60 text-lg text-white active:bg-amber-500"
+                onPointerDown={(e) => { e.preventDefault(); walkInput.keys.__touch = true; walkInput.keys[code] = true; }}
+                onPointerUp={() => { walkInput.keys[code] = false; }} onPointerLeave={() => { walkInput.keys[code] = false; }} onPointerCancel={() => { walkInput.keys[code] = false; }}>{label}</button>
+            ) : <span key={i} />)}
+          </div>
+        </>
       ) : (
         <div className="absolute left-3 top-3 flex gap-1">
           {(['perspective', 'dollhouse', 'top', 'front'] as const).map((p) => (

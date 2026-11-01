@@ -4,7 +4,7 @@ Archiform is a browser app that turns a house or building floor plan into an **e
 
 The 3D model is built from structured geometry: walls, openings, rooms and floors, all with real dimensions. An AI-generated picture is never treated as the 3D conversion.
 
-> **Status:** MVP (Phase 1 + Phase 2, plus parts of Phases 3–4 from the developer specification). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how each requirement is covered and what is still open.
+> **Status:** v0.2.0 controlled prototype. Stage 1 and Stage 2 of the November 2026 audit are implemented; see [docs/AUDIT_RESPONSE.md](docs/AUDIT_RESPONSE.md) for each finding, its fix and its regression test, plus what still needs real-device and real-user testing. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the original specification.
 
 ---
 
@@ -27,7 +27,7 @@ The 3D model is built from structured geometry: walls, openings, rooms and floor
 | **Catalog (FR-14)** | 37 parametric furniture and fixture models, searchable and filterable by category, style, width and price. Licence and source are recorded for each item. |
 | **Reports (FR-15)** | PDF report with a render, rooms and areas, finishes, a product list and indicative paint and flooring quantities and costs, plus disclaimers. Also JSON export. |
 | **Multi-floor (FR-16)** | Add floors with elevation and ceiling height. Exterior walls are copied up, the floor below shows as a ghost, and overlapping floors are flagged. |
-| **Privacy** | Local-first: projects stay in your browser (IndexedDB) unless you connect the optional backend. |
+| **Privacy & saving** | Projects are **saved on this device** (IndexedDB) with revision-safe autosave. Use *Back up project file* to move or recover projects. The optional backend adds detection and AI only; it does not sync projects yet. |
 
 ---
 
@@ -60,25 +60,25 @@ Requirements: **Node.js 20+**. Python 3.11+ is needed only for the optional back
 cd frontend
 npm install
 npm run dev          # http://localhost:5173
-npm test             # unit tests (detection, geometry, AI safety, save/reload round-trip)
+npm test             # 52 unit tests incl. regression tests for every reproduced audit finding
 npm run build        # production build in frontend/dist
 ```
 
 To try it out: on the dashboard choose **Start from a blueprint**, then click *Download a sample plan to try* on the upload screen. Calibrate with the *12.00 m* dimension line at the bottom of the plan. You can also open **Sample 2BHK** to explore a furnished apartment.
 
-### Optional backend (OpenCV detection, server AI, cloud projects)
+### Optional backend (OpenCV detection, server AI, project API)
 
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env                       # set API_TOKEN; DATABASE_URL defaults to SQLite if unset
+cp .env.example .env                       # local SQLite settings; .env is loaded automatically
 alembic upgrade head
 uvicorn app.main:app --reload              # API docs: http://localhost:8000/docs
 pytest -q
 ```
 
-Then, in the app, go to **Settings → Optional processing server**, enter `http://localhost:8000` and your `API_TOKEN`, and click *Test connection*. The import wizard now offers the **Server · OpenCV** engine, and the AI panel offers **Server AI**.
+Then, in the app, go to **Settings → Optional processing server**, enter `http://localhost:8000` and the token part of `API_TOKENS` (e.g. `change-me-to-a-long-random-string`), and click *Test connection*. It reports whether the server is reachable, whether your token was accepted, and whether an AI provider is configured. The import wizard now offers the **Server · OpenCV** engine, and the AI panel offers **Server AI**.
 
 To enable an AI provider, set these in `backend/.env`:
 
@@ -91,7 +91,7 @@ AI_MODEL=claude-sonnet-5-5   # or your provider's model id
 ### Full stack with Docker
 
 ```bash
-cp backend/.env.example backend/.env       # edit API_TOKEN
+cp backend/.env.docker.example backend/.env.docker   # edit API_TOKENS (one user:token pair per person)
 docker compose up --build
 # UI  → http://localhost:8080
 # API → http://localhost:8000/docs   (Postgres included)
@@ -137,10 +137,15 @@ archiform/
 
 ---
 
-## Known limitations (MVP boundary)
+## Known limitations
+
+See [docs/AUDIT_RESPONSE.md §5](docs/AUDIT_RESPONSE.md) for the full open list. In short:
+
 
 - Automatic detection is built for **clean, orthogonal, single-floor plans** in which walls are drawn as thick dark strokes. Diagonal or curved walls, hatched walls, hand-drawn sketches and scanned photos may need manual tracing. You can always skip detection and trace over the blueprint underlay.
-- Room names are not read from the plan yet (no OCR). Detected rooms are numbered for you to rename.
+- Room names are not read from the plan yet (no OCR). You name rooms in the import wizard's last step, or later in the chat ("room 2 is a bedroom").
+- The backend uses per-user API tokens. A public consumer service still needs a proper identity provider, rate limiting and malware scanning.
+- PDF reports can only show Latin characters; the app warns you before exporting if names use other scripts.
 - DWG/DXF import, AR preview, collaboration and share links, and supplier price catalogs are not built yet (P2/P3 in the specification).
 - "Product approximations" are textured blocks sized to the dimensions you enter. A single photo cannot produce exact 3D geometry.
 - Renders capture the real-time WebGL view. Photoreal Blender rendering on the backend is the next step.

@@ -49,7 +49,7 @@ export default function App() {
   useEffect(() => {
     if (route.page !== 'editor' && route.page !== 'import') return;
     setMissing(false);
-    void useEditor.getState().openProject(route.id).then((ok) => setMissing(!ok));
+    void useEditor.getState().openProject(route.id).then((ok) => setMissing(!ok)).catch((e) => { console.error(e); setMissing(true); });
   }, [route]);
 
   let body: React.ReactNode;
@@ -57,8 +57,8 @@ export default function App() {
   else if (route.page === 'dashboard') body = <Dashboard />;
   else if (route.page === 'settings') body = <Settings />;
   else if (missing) body = (
-    <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-stone-950 text-stone-300">
-      <p>This project was not found in this browser.</p>
+    <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-stone-950 px-6 text-center text-stone-300">
+      <p>This project could not be opened — it was not found in this browser or its data is damaged.</p>
       <Btn variant="primary" onClick={() => useEditor.getState().navigate({ page: 'dashboard' })}>Back to projects</Btn>
     </div>
   );

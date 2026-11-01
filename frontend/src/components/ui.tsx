@@ -1,12 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { Units } from '../lib/types';
-import { fromMeters, toMeters } from '../lib/geometry';
+import { fmtLen, fromMeters, parseFeetInches, toMeters } from '../lib/geometry';
 
 export function Btn({ children, onClick, variant = 'ghost', className = '', disabled, title, type = 'button', active }: {
   children: ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'outline' | 'danger'; className?: string; disabled?: boolean; title?: string; type?: 'button' | 'submit'; active?: boolean;
 }) {
-  const base = 'inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:cursor-not-allowed disabled:opacity-40';
+  // responsive "hidden md:inline-flex" must not be overridden by the default display class
+  const display = /(^|\s)hidden(\s|$)/.test(className) ? '' : 'inline-flex';
+  const base = `${display} items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:cursor-not-allowed disabled:opacity-40`;
   const v = {
     primary: 'bg-amber-500 px-3 py-1.5 text-stone-950 hover:bg-amber-400',
     ghost: `px-2 py-1.5 ${active ? 'bg-stone-700 text-white' : 'text-stone-300 hover:bg-stone-800 hover:text-white'}`,
@@ -16,7 +19,18 @@ export function Btn({ children, onClick, variant = 'ghost', className = '', disa
   return <button type={type} title={title} aria-label={title} disabled={disabled} onClick={onClick} className={`${base} ${v} ${className}`}>{children}</button>;
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+/** Labelled field. Use `group` when the field contains several controls (e.g. picker + text box). */
+export function Field({ label, children, hint, group }: { label: string; children: ReactNode; hint?: string; group?: boolean }) {
+  const id = useId();
+  if (group) {
+    return (
+      <div role="group" aria-labelledby={id} className="block">
+        <span id={id} className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-stone-400">{label}</span>
+        {children}
+        {hint && <span className="mt-1 block text-[11px] text-stone-500">{hint}</span>}
+      </div>
+    );
+  }
   return (
     <label className="block">
       <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-stone-400">{label}</span>
@@ -55,30 +69,71 @@ export function NumField({ value, onCommit, step = 0.01, min, max, suffix, class
   );
 }
 
-/** Length field: stores metres, displays in project units. */
+/**
+ * Length field. Values and bounds are always in METRES; display is in project units.
+ * Imperial projects accept feet-and-inches text such as 10' 6", 10 6 or 10.5.
+ */
 export function LenField({ meters, units, onCommit, min = 0, max }: { meters: number; units: Units; onCommit: (m: number) => void; min?: number; max?: number }) {
-  return (
-    <NumField value={+fromMeters(meters, units).toFixed(3)} step={units === 'ft' ? 0.1 : 0.01} min={min} max={max !== undefined ? fromMeters(max, units) : undefined}
-      suffix={units} onCommit={(v) => onCommit(toMeters(v, units))} />
-  );
+  if (units === 'm') {
+    return <NumField value={+meters.toFixed(3)} step={0.01} min={min} max={max} suffix="m" onCommit={onCommit} />;
+  }
+  return <FeetField meters={meters} onCommit={onCommit} min={min} max={max} />;
 }
 
-export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
+function FeetField({ meters, onCommit, min, max }: { meters: number; onCommit: (m: number) => void; min: number; max?: number }) {
+  const [txt, setTxt] = useState(fmtLen(meters, 'ft'));
+  const [bad, setBad] = useState(false);
+  useEffect(() => { setTxt(fmtLen(meters, 'ft')); setBad(false); }, [meters]);
+  const commit = () => {
+    const ft = parseFeetInches(txt);
+    if (ft === null) { setBad(true); return; }
+    let m = toMeters(ft, 'ft');
+    m = Math.max(min, max !== undefined ? Math.min(max, m) : m);
+    setBad(false);
+    if (Math.abs(m - meters) > 1e-6) onCommit(m);
+    setTxt(fmtLen(m, 'ft'));
+  };
   return (
+    <input value={txt} onChange={(e) => setTxt(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      aria-invalid={bad} title={`Feet and inches, e.g. 10' 6". Range ${fmtLen(min, 'ft')}${max !== undefined ? ` – ${fmtLen(max, 'ft')}` : ''}`}
+      className={`${inputCls} ${bad ? 'border-red-500' : ''}`} />
+  );
+}
+export { fromMeters };
+
+export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const focusables = () => [...(box.current?.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? [])].filter((el) => !el.hasAttribute('disabled'));
+    // focus the first field (or the dialog) when opened
+    requestAnimationFrame(() => { const f = focusables(); (f.find((el) => el.tagName !== 'BUTTON') ?? f[0] ?? box.current)?.focus(); });
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key !== 'Tab') return;
+      const f = focusables();
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener('keydown', k);
+    const root = document.getElementById('root');
+    root?.setAttribute('inert', '');
+    return () => { window.removeEventListener('keydown', k); root?.removeAttribute('inert'); opener?.focus?.(); };
+  }, [onClose]);
+  // rendered outside #root so the app behind it can be made inert
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-auto rounded-xl border border-stone-700 bg-stone-900 shadow-2xl ${wide ? 'max-w-3xl' : 'max-w-md'}`} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-auto rounded-xl border border-stone-700 bg-stone-900 shadow-2xl ${wide ? 'max-w-3xl' : 'max-w-md'}`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-stone-800 px-5 py-3">
           <h2 className="font-semibold text-stone-100">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -32,3 +32,40 @@ def test_walls_openings_rooms():
 def test_blank_image_has_no_walls():
     r = detect(np.full((300, 300), 255, np.uint8), None, None)
     assert r["walls"] == [] and r["rooms"] == []
+
+
+def test_default_threshold_on_pure_black_and_white():
+    """Audit A04: Otsu returns 0 on binary input; detection must still find the walls."""
+    img = np.full((400, 500), 255, np.uint8)
+    cv2.rectangle(img, (50, 50), (449, 349), 0, 10)
+    r = detect(img, 50, None)
+    assert len(r["walls"]) == 4 and len(r["rooms"]) == 1
+
+
+def test_default_threshold_variants():
+    base = np.full((400, 500), 255, np.uint8)
+    cv2.rectangle(base, (50, 50), (449, 349), 0, 10)
+    blurred = cv2.GaussianBlur(base, (5, 5), 0)                 # anti-aliased
+    faint = np.where(base == 0, 150, 255).astype(np.uint8)      # faint grey ink
+    inverted = 255 - base                                       # white lines on black
+    rng = np.random.default_rng(1)
+    noisy = np.clip(base.astype(int) + rng.normal(0, 12, base.shape), 0, 255).astype(np.uint8)  # scan noise
+    for name, img in [("blurred", blurred), ("faint", faint), ("inverted", inverted), ("noisy", noisy)]:
+        r = detect(img, 50, None)
+        assert len(r["walls"]) == 4, name
+        assert len(r["rooms"]) == 1, name
+
+
+def test_l_shaped_room_keeps_its_outline():
+    """Audit A05: an L-shaped room must not become its bounding rectangle."""
+    img = np.full((500, 500), 255, np.uint8)
+    pts = np.array([[50, 50], [450, 50], [450, 250], [250, 250], [250, 450], [50, 450]], np.int32)
+    cv2.polylines(img, [pts], True, 0, 10)
+    r = detect(img, 50, None)
+    assert len(r["rooms"]) == 1
+    room = r["rooms"][0]
+    poly = np.array([[p["x"], p["y"]] for p in room["polygon"]], np.float32)
+    area = cv2.contourArea(poly)
+    assert room["irregular"] is True
+    assert len(room["polygon"]) >= 6
+    assert abs(area - room["areaPx"]) / room["areaPx"] < 0.06
